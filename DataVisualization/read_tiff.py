@@ -1,3 +1,5 @@
+
+import csv
 import argparse
 import time
 import gdal
@@ -5,106 +7,247 @@ import numpy as np
 import rasterio
 from rasterio.plot import show
 import matplotlib.pyplot as plt
+from os import listdir
+from os.path import isfile, join
+import collections
+
+NUM_BANDS_SENTINEL = 13
 
 def normalize(arr):
+    if np.max(arr) == np.min(arr):
+        return arr
     return (arr - np.min(arr))*(255/(np.max(arr)-np.min(arr)))
-        
-def read(dir_path, tif_path, H, W):
-    '''
-    Reads the middle HxW image from the tif given by tif_path via gdal
-    '''
-    full_path = dir_path + tif_path
-    gdal_dataset = gdal.Open(full_path)
 
-    # x_size and y_size and the width and height of the entire tif in pixels
-    x_size, y_size = gdal_dataset.RasterXSize, gdal_dataset.RasterYSize
-    print("TIF Size (W, H): ", x_size, y_size)
+def normalize_bin(arr):
+    return (arr - np.min(arr))*(1/(np.max(arr)-np.min(arr)))
 
-    #gdal_result = gdal_dataset.ReadAsArray() 
-    gdal_result = gdal_dataset.ReadAsArray(0, 0, x_size, y_size)
+def flatten(l):
+    return [num for item in l for num in (item if isinstance(item, list) else (item,))]
     
-    # If a tif file has only 1 band, then the band dimension will be removed.
+def read(dir_path, tif_path):
+    '''
+    Reads the full image from the tif file given by tif_path.
+    '''
+    gdal_dataset = gdal.Open(dir_path + tif_path)
+    WW, HH = gdal_dataset.RasterXSize, gdal_dataset.RasterYSize 
+    return read_middle(dir_path, tif_path, WW, HH)
+    
+def read_middle(dir_path, tif_path, w, h): 
+    '''
+    Reads the middle (w x h) image from the tif file of original size (WW x HH) given by tif_path using gdal 
+    '''
+    gdal_dataset = gdal.Open(dir_path + tif_path)
+    WW, HH = gdal_dataset.RasterXSize, gdal_dataset.RasterYSize
+
+    # Mid point minus half the width and height we want to read will give the top left corner
+    if w > WW:
+        raise Exception("Requested width exceeds original tif width.")
+    if h > HH:
+        raise Exception("Requested height exceeds original tif height.")
+
+    gdal_result = gdal_dataset.ReadAsArray((WW - w)//2, (HH - h)//2, w, h)
+
+    # If a tif file has only 1 band, then the band dimension will be removed
     if len(gdal_result.shape) == 2:
         gdal_result = np.reshape(gdal_result, [1] + list(gdal_result.shape))
 
     # gdal_result is a rank 3 tensor as follows (bands, height, width). Transpose to (h, w, b)
     return np.transpose(gdal_result, (1, 2, 0))
+    
 
-
-def resize_and_save_modis(img, filename):
-    ''' Takes in a (w, h, 2) tensor and converts to a (w, h, 3) image)
+    
+def display_modis(directory, filename):
+    ''' 
+    Takes in tif file named filename in the directory directory and uses gdal 
+        to convert to an RGB image.
+        Saves the file with the same filename as the original .tif file.
     '''
-    reds = np.zeros((img.shape[0],img.shape[1]))
-    img = np.dstack((img, reds))
-
+    #img = read(directory, filename)  
+    img = read_middle(directory, filename, 2, 2)
+    reds = np.zeros((img.shape[0],img.shape[1]))  
+    img[img < -5000] = 0  # note missing values
+    #img = normalize_bin(img) should we normalize?
+    img = np.dstack((reds, img))
+    
     plt.imshow(img)
     plt.show()
-    plt.savefig('/home/sarahciresi/gcloud/cs325b/images/modis/'+ filename + '.png')
-    
+    plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/modis/'+ filename + '.png')
+
     return img
 
-    
-def display_sentinel_gdal(data, filename):
-    ''' Takes in a (w, h, c) tensor and converts to a (w, h, 3) image
-    using band1, band2, band3 as the channels
+
+def save_many_s2(directory):
     '''
+    Converts all Sentinel .tif files to images in the given directory dir
+    '''
+    for idx, fname in enumerate(listdir(directory)[:30]):
+        img = read(directory, fname)
+        display_sentinel_gdal(directory, fname)
+    
+
+def compute_means_all_files_modis(directory):
+    '''
+    Computes the mean value on the MODIS green and blue bands for all files in the directory given.
+    '''
+    
+    print("Computing modis means for directory: {} of size {} \n".format(directory, len(listdir(directory))))
+
+    means = []  # [filename, blue_mean, green_mean, # missing blue values, # missing green values]   
+    for idx, fname in enumerate(listdir(directory)):
+        if idx % 1000 == 0:
+            print("File {} name: {}".format(idx, fname))
+
+        img = read(directory, fname)
+
+        greens = img[:,:,0]
+        blues = img[:,:,1]
+
+        num_pixels = greens.shape[0] * greens.shape[1]
+
+        # get the number of missing values in green and blue channels for whole image
+        num_missing_g = np.where(greens.flatten() < - 50000)[0].shape[0]
+        num_missing_b = np.where(blues.flatten() < - 50000)[0].shape[0]
+
+        num_valid_g = num_pixels - num_missing_g
+        num_valid_b = num_pixels - num_missing_b
+        
+        # compute the mean, not including missing pixels.. zero them out for the sum computation
+        blues[blues < -50000] = 0
+        greens[greens < -50000] = 0
+        
+        # avoid divide by 0 if full image is missing
+        bm = np.sum(blues)
+        gm = np.sum(greens)
+
+        if (num_valid_b != 0):
+            bm /= num_valid_b
+        if (num_valid_g != 0):
+            gm /= num_valid_g
+
+        means.append([fname, bm, gm, num_missing_b, num_missing_g])
+
+    # Save to .csv file for later use
+    with open("modis_channel_means_revised.csv", 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Filename", "Blue mean", "Green mean", "Num Missing Blue", "Num Missing Green"])
+        writer.writerows(means)
+    csvfile.close()
+
+def compute_means_all_files_sentinel(directory):
+    ''' 
+    Computes the mean band value for each of the 13 Sentinel bands for each individual measurement in
+    each .tif file in the directory.
+    '''
+    print("Computing sentinel means for directory: {} of size {} \n".format(directory, len(listdir(directory))))
+
+    means = [] # [filename, measurement, b1_mean_with_zeros, b2_mean, ... b13_mean,
+               #  b1_m_without_zeros ... missing b1 values, ... # missing b13 values]
+    
+    for idx, fname in enumerate(listdir(directory)):
+        if idx % 10 == 0:
+            print("File {} name: {}".format(idx, fname))
+
+        img = read(directory, fname)
+        num_measurements = img.shape[2]//NUM_BANDS_SENTINEL
+        num_pixels = img.shape[0] * img.shape[1]
+
+        # for each measurement, look at each of 1-13 bands, and compute the mean for that day
+        for m in range(0, num_measurements):
+
+            band_means_with_zeros = []
+            band_means_without_zeros = []
+            band_zero_val_counts = []
+            
+            for band in range(0, num_bands):
+                band_n = img[:,:, band + m * num_bands]
+                num_zeros = np.where(band_n.flatten() == 0)[0].shape[0]  # changed from 500
+                num_nonzero = num_pixels - num_zeros
+                
+                # compute the mean with zeros and without 
+                band_mean_with_zeros = np.mean(band_n)
+                band_mean_without_zeros = np.sum(band_n)  #np.mean(band_n)
+                if (num_nonzero  != 0):
+                    band_mean_without_zeros /= num_nonzero
+                    
+                band_means_with_zeros.append(band_mean_with_zeros)
+                band_means_without_zeros.append(band_mean_without_zeros)
+                band_zero_val_counts.append(num_zeros)
+                
+            row = [fname, m, band_means_with_zeros, band_means_without_zeros, band_zero_val_counts]
+            flattened_row = flatten(row)
+            means.append(flattened_row)
+            
+    with open("sentinel_channel_means.csv", 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Filename", "Index", "B1 (with zeros)", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", 
+                         "B11", "B12", "B13", "B1 (without zeros)", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
+                         "B11", "B12", "B13", "Missing B1", "Missing B2", "Missing B3", "Missing B4",
+                         "Missing B5", "Missing B6", "Missing B7", "Missing B8", "Missing B9", "Missing B10",
+                         "Missing B11", "Missing B12", "Missing B13"])
+        writer.writerows(means)
+    csvfile.close()
+                                                                                                                                
+
+
+def display_sentinel_gdal(dir_path, filename):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
+        an RGB image.
+    '''
+    data = read(dir_path, filename)
     print("Processing Sentinel-2 image with shape {}".format(data.shape))
-    num_bands = 13
-    num_measurements = data.shape[2]//num_bands                                 
+    num_measurements = data.shape[2]//NUM_BANDS_SENTINEL                     
  
     # for each daily measurement, get the corresponding blue, green, and red bands
     for day in range(0, num_measurements):
             
-        reds = data[:,:, 2 + day * num_bands] # band1]
-        greens = data[:,:, 3 + day * num_bands] #band2]
-        blues = data[:,:, 4 + day * num_bands] #band3]
+        blues = data[:,:, 1 + day * NUM_BANDS_SENTINEL]   # Band 2
+        greens = data[:,:, 2 + day * NUM_BANDS_SENTINEL]  # Band 3
+        reds = data[:,:, 3 + day * NUM_BANDS_SENTINEL]    # Band 4
     
         # Normalize the inputs
-        reds = normalize(reds)        #(reds - np.min(reds))*(255/(np.max(reds)-np.min(reds)))
-        greens =  normalize(greens)   #(greens - np.min(greens))*(255/(np.max(greens)-np.min(greens)))
-        blues =   normalize(blues)    #(blues - np.min(blues))*(255/(np.max(blues)-np.min(blues)))
+        reds = normalize(reds)
+        greens = normalize(greens) 
+        blues = normalize(blues)  
 
         img = np.dstack((reds, greens, blues)).astype(int)
 
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b/images/s2/gdal_'+ filename + '_m' + str(day) + '.png')
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/gdal_'+ filename + '_m' + str(day) + '.png')
                 
     return img
 
-def display_sentinel_rast(dir_path, filename): #, b1, b2, b3):
-    ''' '''
-
-    filepath = dir_path + filename
-    dataset = rasterio.open(filepath)
-    num_bands = 13
-    num_measurements = dataset.count // num_bands
-    show((dataset,1))
+def display_sentinel_rast(dir_path, filename):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses rasterio 
+        to convert to an RGB image.
+    '''
+    dataset = rasterio.open(dir_path + filename)
+    num_measurements = dataset.count // NUM_BANDS_SENTINEL
     
     # for each daily measurement, get the corresponding blue, green, and red bands
     for day in range(0, num_measurements):
-        blues = dataset.read(2 + day * num_bands)   # 2, 15, 28, etc.
-        greens = dataset.read(3 + day * num_bands)
-        reds = dataset.read(4 + day * num_bands)
+        blues = dataset.read(2 + day * NUM_BANDS_SENTINEL)
+        greens = dataset.read(3 + day * NUM_BANDS_SENTINEL)
+        reds = dataset.read(4 + day * NUM_BANDS_SENTINEL)
 
         # normalize the pixel values
-        reds = normalize(reds)       #(reds - np.min(reds))*(255/(np.max(reds)-np.min(reds)))
-        greens = normalize(greens)   #(greens - np.min(greens))*(255/(np.max(greens)-np.min(greens)))
-        blues = normalize(blues)     #(blues - np.min(blues))*(255/(np.max(blues)-np.min(blues)))
+        reds = normalize(reds)
+        greens = normalize(greens)
+        blues = normalize(blues)   
         
         img = np.dstack((reds,greens,blues)).astype(int)
         
         # save image of each measurement
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b/images/s2/rast_' + filename + '_m' + str(day) +'.png')    
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/rast_' + filename + '_m' + str(day) +'.png')    
 
 
          
 if __name__ == "__main__":
  
     #default_path = "/home/sarahciresi/gcloud/cs325b/data/modis/2016_processed_100x100/2016_001_181630023.tif"
-    dir_path = "/home/sarahciresi/gcloud/cs325b/data/sentinel/2016/"
+    dir_path = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
     file = "s2_2016_10_1002_171670012.tif"
     
     parser = argparse.ArgumentParser(description="Read the middle tile from a tif.")
@@ -115,22 +258,38 @@ if __name__ == "__main__":
     parser.add_argument('-t','--height', default=5000, type=int, help='Tile height')
     parser.add_argument('-s','--type', default="modis", type=str, help="Image type")
     args = parser.parse_args()
-    
+
+    '''
     start_time = time.time()
-    img = read(dir_path, args.tif_path, args.height, args.width)
+    img = read(dir_path, args.tif_path) #, args.height, args.width)
     img_time = time.time() - start_time
     start_time = time.time()
     
     if(args.type == "modis"):
-        img = resize_modis(img, args.tif_path)
+        img = display_modis(img, args.tif_path)
 
     elif(args.type =="s2"):
-        b1 = 2
-        b2 = 3
-        b3 = 4
         display_sentinel_gdal(img, args.tif_path)
         display_sentinel_rast(dir_path, args.tif_path)
-        
-    #img = imresize(np.squeeze(img2), 0.125)
+    '''
     
+    modis_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/2016_processed_100x100/"
+    modis_fp = "2016_076_171670012.tif"
+    #"2016_319_171670012.tif" #"2016_095_310550019.tif" #"2017_256_300630038.tif" #"2017_251_300630038.tif"
+    #display_modis(dp, fp)
+    #compute_means_all_files_modis(mod_dir)
+
+    sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
+    #compute_means_all_files_sentinel(sent_dir)
+
+    #fp = "s2_2017_10_62_300630038.tif" # "s2_2017_8_62_300630038.tif"
+    #display_sentinel_rast(dps,"s2_2016_9_29_300630038.tif")
+
+    sent_fp =  "s2_2016_9_176_482011039.tif"
+    img = read(sent_dir, sent_fp)
+    display_sentinel_rast(sent_dir, sent_fp)
+    #save_many_s2(sent_fp)
+    
+
+
 
