@@ -65,6 +65,11 @@ def rename_all_sentinel_files(sentinel_folder_path):
     """
         Loops through all the directories in the Sentinel data folder and
         renames them according to rename_sentinel_files.
+        
+        Parameters
+        ----------
+        sentinel_folder_path : str
+            Absolute path to the Sentinel data folder
     """
     
     directories = next(os.walk(sentinel_folder_path))[1]
