@@ -1,4 +1,3 @@
-
 import csv
 import argparse
 import time
@@ -97,7 +96,7 @@ def compute_means_all_files_modis(directory):
         if idx % 1000 == 0:
             print("File {} name: {}".format(idx, fname))
 
-        img = read(directory, fname)
+        img = read_middle(directory, fname, 2, 2)
 
         greens = img[:,:,0]
         blues = img[:,:,1]
@@ -245,11 +244,7 @@ def display_sentinel_rast(dir_path, filename):
 
          
 if __name__ == "__main__":
- 
-    #default_path = "/home/sarahciresi/gcloud/cs325b/data/modis/2016_processed_100x100/2016_001_181630023.tif"
-    dir_path = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
-    file = "s2_2016_10_1002_171670012.tif"
-    
+     
     parser = argparse.ArgumentParser(description="Read the middle tile from a tif.")
     parser.add_argument('-p', '--tif_path',
                         default=file,
@@ -275,21 +270,11 @@ if __name__ == "__main__":
     
     modis_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/2016_processed_100x100/"
     modis_fp = "2016_076_171670012.tif"
-    #"2016_319_171670012.tif" #"2016_095_310550019.tif" #"2017_256_300630038.tif" #"2017_251_300630038.tif"
-    #display_modis(dp, fp)
-    #compute_means_all_files_modis(mod_dir)
+    # display_modis(dp, fp)
+    # compute_means_all_files_modis(modis_dir)
 
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
+    sent_fp = "s2_2016_9_176_482011039.tif" 
     #compute_means_all_files_sentinel(sent_dir)
-
-    #fp = "s2_2017_10_62_300630038.tif" # "s2_2017_8_62_300630038.tif"
-    #display_sentinel_rast(dps,"s2_2016_9_29_300630038.tif")
-
-    sent_fp =  "s2_2016_9_176_482011039.tif"
-    img = read(sent_dir, sent_fp)
-    display_sentinel_rast(sent_dir, sent_fp)
-    #save_many_s2(sent_fp)
-    
-
-
-
+    #display_sentinel_rast(sent_dir, sent_fp)
+    #save_many_s2(sent_fp) 
