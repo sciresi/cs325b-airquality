@@ -43,6 +43,6 @@ for site in sites:
     #-1 because we don't try to predict the first day's reading at any station
     num_predictions+=(num_readings-1)
 #gets avverage
-mse /= len(num_predictions)
+mse /= num_predictions
 print(mse)
     
