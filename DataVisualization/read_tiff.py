@@ -135,7 +135,7 @@ def compute_means_all_files_modis(directory):
 def compute_means_all_files_sentinel(directory):
     ''' 
     Computes the mean band value for each of the 13 Sentinel bands for each individual measurement in
-    each .tif file in the directory.
+    each .tif file in the directory. 
     '''
     print("Computing sentinel means for directory: {} of size {} \n".format(directory, len(listdir(directory))))
 
@@ -146,7 +146,11 @@ def compute_means_all_files_sentinel(directory):
         if idx % 10 == 0:
             print("File {} name: {}".format(idx, fname))
 
-        img = read(directory, fname)
+        #img = read(directory, fname)
+        im_size = 200
+        img = read_middle(directory, fname, im_size, im_size)
+        img32 = read_middle(directory, fname, 32, 32)
+        
         num_measurements = img.shape[2]//NUM_BANDS_SENTINEL
         num_pixels = img.shape[0] * img.shape[1]
 
@@ -157,8 +161,8 @@ def compute_means_all_files_sentinel(directory):
             band_means_without_zeros = []
             band_zero_val_counts = []
             
-            for band in range(0, num_bands):
-                band_n = img[:,:, band + m * num_bands]
+            for band in range(0, NUM_BANDS_SENTINEL):
+                band_n = img[:,:, band + m * NUM_BANDS_SENTINEL]
                 num_zeros = np.where(band_n.flatten() == 0)[0].shape[0]  # changed from 500
                 num_nonzero = num_pixels - num_zeros
                 
@@ -175,8 +179,9 @@ def compute_means_all_files_sentinel(directory):
             row = [fname, m, band_means_with_zeros, band_means_without_zeros, band_zero_val_counts]
             flattened_row = flatten(row)
             means.append(flattened_row)
-            
-    with open("sentinel_channel_means.csv", 'w') as csvfile:
+
+    save_to_file = "sentinel_channel_means_" + im_size + ".csv"
+    with open(save_to_file, 'w') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(["Filename", "Index", "B1 (with zeros)", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", 
                          "B11", "B12", "B13", "B1 (without zeros)", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
@@ -246,9 +251,7 @@ def display_sentinel_rast(dir_path, filename):
 if __name__ == "__main__":
      
     parser = argparse.ArgumentParser(description="Read the middle tile from a tif.")
-    parser.add_argument('-p', '--tif_path',
-                        default=file,
-                        help='The path to the tif')
+    parser.add_argument('-p', '--tif_path', help='The path to the tif')
     parser.add_argument('-w','--width', default=1000, type=int, help='Tile width')
     parser.add_argument('-t','--height', default=5000, type=int, help='Tile height')
     parser.add_argument('-s','--type', default="modis", type=str, help="Image type")
@@ -275,6 +278,6 @@ if __name__ == "__main__":
 
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
     sent_fp = "s2_2016_9_176_482011039.tif" 
-    #compute_means_all_files_sentinel(sent_dir)
+    compute_means_all_files_sentinel(sent_dir)
     #display_sentinel_rast(sent_dir, sent_fp)
     #save_many_s2(sent_fp) 

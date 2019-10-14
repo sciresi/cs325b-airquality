@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import datetime as dt
 
-def epa_to_file_name(date_string, station_id):
+def epa_to_modis_file_name(date_string, station_id):
     
     #handles dates where year is written with four digits
     if date_string[-4:].isnumeric():
@@ -66,20 +66,21 @@ def plot_blue_green(modis_df):
 
 #gathers all the 2016 csv files into one dataframe
 #returns dataframe
-def get_epa():
-    files = os.listdir()
+def get_epa(epa_directory, year = '2016'):
+    files = os.listdir(epa_directory)
     first_file = True
     for file in files:
-        if file[-6:]=="16.csv":
-            new_df = pandas.read_csv(file)
+        if file[-8:]== year + ".csv":
+            new_df = pandas.read_csv(epa_directory + file)
             if not first_file:
                 df = df.append(new_df,ignore_index=True)
             else:
                 df = new_df
                 first_file = False
     return df
-def get_modis():
-    modis_df = pandas.read_csv("modis_channel_means_revised.csv")
+
+def get_modis_means(modis_means_filename, modis_means_directory):
+    modis_df = pandas.read_csv(modis_means_directory + modis_means_filename)
     return modis_df
 
 #plots pm vs green, pm vs. blue
@@ -96,7 +97,7 @@ def plot_pm_vs_modis(epa_df,modis_df,under_fifty = True):
                 print("At row:")
                 print(str(row))
             
-            file_name = epa_to_file_name(epa_df['Date'][row],epa_df['Site ID'][row])
+            file_name = epa_to_modis_file_name(epa_df['Date'][row],epa_df['Site ID'][row])
             modis_row = modis_df[modis_df['Filename']==file_name]
             pm_list.append(epa_df['Daily Mean PM2.5 Concentration'][row])
             green = modis_row['Green mean'][modis_row.index[0]]
@@ -113,10 +114,21 @@ def plot_pm_vs_modis(epa_df,modis_df,under_fifty = True):
     plt.title("MODIS Blue Values vs. PM2.5")
     plt.scatter(pm_list,blue_list)
     plt.show()
-epa = get_epa()
-modis = get_modis()
-#plot_blue(modis)
-#plot_green(modis)
-#plot_blue_green(modis)
-plot_pm_vs_modis(epa,modis)
+
+
+
+if __name__ == "__main__":    
+
+    means_file = "modis_means_2x2.csv"
+    modis_dir = "/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization/channel_means/"
+    epa_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/epa/"
+    
+    #epa = get_epa(epa_dir)
+    #modis = get_modis_means(means_file, modis_dir)
+    #print(epa)
+    #print(modis)
+    #plot_blue(modis)
+    #plot_green(modis)
+    #plot_blue_green(modis)
+    #plot_pm_vs_modis(epa,modis)
     
