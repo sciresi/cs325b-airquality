@@ -7,7 +7,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.utils import shuffle
 import sys
 sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
-from  modis_vis_with_epa import get_modis_means, get_epa, epa_to_modis_file_name
+from  modis_vis_with_epa import get_modis_means, get_epa, epa_to_modis_file_name, plot_pm_vs_modis
+import matplotlib.pyplot as plt
+
 
 ''' Use modis_vis files instead
 def get_aod_means(directory):
@@ -138,6 +140,38 @@ def run_baseline_model(epa_data, modis_means):
     MSE = MSE/num_predictions   
     print("Mean squared error acrosss all dates:  {}".format(MSE))
     
+def plot_pm(epa_df, modis_df):
+    pm_list = []
+    green_list = []
+    blue_list = []
+    print("Number of epa rows: {}".format(len(epa_df)))
+            
+    for row in range(len(epa_df)):
+        if row % 1000 == 0:
+            print("At row: x {}".format(str(row)))
+            
+        file_name = epa_to_modis_file_name(epa_df['Date'][row],epa_df['Site ID'][row])
+        modis_row = modis_df[modis_df['Filename']==file_name]
+        pm_list.append(epa_df['Daily Mean PM2.5 Concentration'][row])
+        green = modis_row['Green mean'][modis_row.index[0]]
+        blue = modis_row['Blue mean'][modis_row.index[0]]
+        green_list.append(green)
+        blue_list.append(blue)
+    
+    plt.scatter(pm_list, green_list)
+    print(np.corrcoef(pm_list, green_list))
+    plt.title("MODIS Green Values vs. PM2.5")
+    plt.ylabel("Mean Green Values")
+    plt.xlabel("PM2.5 Concentration")
+    plt.show()
+
+    print(np.corrcoef(pm_list,blue_list))
+    plt.title("MODIS Blue Values vs. PM2.5")
+    plt.scatter(pm_list,blue_list)
+    plt.ylabel("Mean Blue Values")
+    plt.xlabel("PM2.5 Concentration")
+    plt.show()
+
 
 if __name__ == "__main__":
 
@@ -147,4 +181,5 @@ if __name__ == "__main__":
 
     epa_2016 = get_epa(epa_dir, year = "2016")
     modis_means_2016 = get_modis_means(means_file, modis_dir)
-    run_baseline_model(epa_2016, modis_means_2016)
+    #run_baseline_model(epa_2016, modis_means_2016)
+    plot_pm(epa_2016, modis_means_2016)
