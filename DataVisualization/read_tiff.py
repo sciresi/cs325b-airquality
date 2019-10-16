@@ -56,7 +56,6 @@ def read_middle(dir_path, tif_path, w, h):
     return np.transpose(gdal_result, (1, 2, 0))
     
 
-    
 def display_modis(directory, filename):
     ''' 
     Takes in tif file named filename in the directory directory and uses gdal 
@@ -77,14 +76,109 @@ def display_modis(directory, filename):
     return img
 
 
-def save_many_s2(directory):
+def display_sentinel_gdal(dir_path, filename):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
+        an RGB image.
     '''
-    Converts all Sentinel .tif files to images in the given directory dir
+    data = read(dir_path, filename)
+    print("Processing Sentinel-2 image with shape {}".format(data.shape))
+    num_measurements = data.shape[2]//NUM_BANDS_SENTINEL                     
+ 
+    # for each daily measurement, get the corresponding blue, green, and red bands
+    for day in range(0, num_measurements):
+            
+        blues = data[:,:, 1 + day * NUM_BANDS_SENTINEL]   # Band 2
+        greens = data[:,:, 2 + day * NUM_BANDS_SENTINEL]  # Band 3
+        reds = data[:,:, 3 + day * NUM_BANDS_SENTINEL]    # Band 4
+    
+        # Normalize the inputs
+        reds = normalize(reds)
+        greens = normalize(greens) 
+        blues = normalize(blues)  
+
+        img = np.dstack((reds, greens, blues)).astype(int)
+
+        plt.imshow(img)
+        plt.show()
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/gdal_'+ filename + '_m' + str(day) + '.png')
+                
+    return img
+
+
+def display_sentinel_rast(dir_path, filename):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses rasterio 
+        to convert to an RGB image.
     '''
-    for idx, fname in enumerate(listdir(directory)[:30]):
+    dataset = rasterio.open(dir_path + filename)
+    num_measurements = dataset.count // NUM_BANDS_SENTINEL
+    
+    # for each daily measurement, get the corresponding blue, green, and red bands
+    for day in range(0, num_measurements):
+        blues = dataset.read(2 + day * NUM_BANDS_SENTINEL)
+        greens = dataset.read(3 + day * NUM_BANDS_SENTINEL)
+        reds = dataset.read(4 + day * NUM_BANDS_SENTINEL)
+
+        # normalize the pixel values
+        reds = normalize(reds)
+        greens = normalize(greens)
+        blues = normalize(blues)   
+        
+        img = np.dstack((reds,greens,blues)).astype(int)
+        
+        # save image of each measurement
+        plt.imshow(img)
+        plt.show()
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/rast_' + filename + '_m' + str(day) +'.png')    
+
+
+def save_all_s2_imgs(directory):
+    '''
+    Converts and saves all Sentinel .tif files to images from the given directory.
+    '''
+    for idx, fname in enumerate(listdir(directory)):
         img = read(directory, fname)
         display_sentinel_gdal(directory, fname)
+
+
+def save_all_modis_to_csv(directory, csv_filename):
+    '''
+    Saves the blue and green channel values of the 4 center pixel values
+    of every modis image in the given directory to the given csv named csv_filename.
+    '''
     
+    print("Saving 2x2 cropped modis images from directory: {} of size {} \n".format(directory, len(listdir(directory))))
+
+    with open(csv_filename, 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Filename", "Blue [0,0]", "Blue [0,1]", "Blue [1,0]", "Blue [1,1]", 
+                         "Green [0,0]", "Green [0,1]", "Green [1,0]", "Green [1,1]"])
+        
+        for idx, fname in enumerate(listdir(directory)):
+            if idx % 100 == 0:
+                print("File {} name: {}".format(idx, fname))
+
+            img = read_middle(directory, fname, 2, 2)
+
+            blues = img[:,:,1]
+            greens = img[:,:,0]
+
+            # Mask missing values with small negative sentinel 
+            blues[blues<-50000] = -1
+            greens[greens<-50000] = -1
+            
+            num_pixels = greens.shape[0] * greens.shape[1]
+            writer.writerow([blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
+                             greens[1,0], greens[1,1]])
+           # means.append([fname, bm, gm, num_missing_b, num_missing_g])
+
+    '''
+    with open("modis_channel_means_revised.csv", 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Filename", "Blue mean", "Green mean", "Num Missing Blue", "Num Missing Green"])
+        writer.writerows(means)'''
+    csvfile.close()
+
+        
 
 def compute_means_all_files_modis(directory):
     '''
@@ -134,6 +228,7 @@ def compute_means_all_files_modis(directory):
         writer.writerows(means)
     csvfile.close()
 
+    
 def compute_means_all_files_sentinel(directory):
     ''' 
     Computes the mean band value for each of the 13 Sentinel bands for each individual measurement in
@@ -235,64 +330,7 @@ def compute_means_all_files_sentinel(directory):
                          "Missing B11", "Missing B12", "Missing B13"])
         writer.writerows(means2)
     csvfile.close()
-                                                                                                                                
 
-
-def display_sentinel_gdal(dir_path, filename):
-    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
-        an RGB image.
-    '''
-    data = read(dir_path, filename)
-    print("Processing Sentinel-2 image with shape {}".format(data.shape))
-    num_measurements = data.shape[2]//NUM_BANDS_SENTINEL                     
- 
-    # for each daily measurement, get the corresponding blue, green, and red bands
-    for day in range(0, num_measurements):
-            
-        blues = data[:,:, 1 + day * NUM_BANDS_SENTINEL]   # Band 2
-        greens = data[:,:, 2 + day * NUM_BANDS_SENTINEL]  # Band 3
-        reds = data[:,:, 3 + day * NUM_BANDS_SENTINEL]    # Band 4
-    
-        # Normalize the inputs
-        reds = normalize(reds)
-        greens = normalize(greens) 
-        blues = normalize(blues)  
-
-        img = np.dstack((reds, greens, blues)).astype(int)
-
-        plt.imshow(img)
-        plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/gdal_'+ filename + '_m' + str(day) + '.png')
-                
-    return img
-
-def display_sentinel_rast(dir_path, filename):
-    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses rasterio 
-        to convert to an RGB image.
-    '''
-    dataset = rasterio.open(dir_path + filename)
-    num_measurements = dataset.count // NUM_BANDS_SENTINEL
-    
-    # for each daily measurement, get the corresponding blue, green, and red bands
-    for day in range(0, num_measurements):
-        blues = dataset.read(2 + day * NUM_BANDS_SENTINEL)
-        greens = dataset.read(3 + day * NUM_BANDS_SENTINEL)
-        reds = dataset.read(4 + day * NUM_BANDS_SENTINEL)
-
-        # normalize the pixel values
-        reds = normalize(reds)
-        greens = normalize(greens)
-        blues = normalize(blues)   
-        
-        img = np.dstack((reds,greens,blues)).astype(int)
-        
-        # save image of each measurement
-        plt.imshow(img)
-        plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/rast_' + filename + '_m' + str(day) +'.png')    
-
-
-         
 if __name__ == "__main__":
      
     parser = argparse.ArgumentParser(description="Read the middle tile from a tif.")
@@ -303,11 +341,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     '''
-    start_time = time.time()
-    img = read(dir_path, args.tif_path) #, args.height, args.width)
-    img_time = time.time() - start_time
-    start_time = time.time()
-    
     if(args.type == "modis"):
         img = display_modis(img, args.tif_path)
 
@@ -323,6 +356,7 @@ if __name__ == "__main__":
 
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
     sent_fp = "s2_2016_9_176_482011039.tif" 
-    compute_means_all_files_sentinel(sent_dir)
+    #compute_means_all_files_sentinel(sent_dir)
     #display_sentinel_rast(sent_dir, sent_fp)
     #save_many_s2(sent_fp) 
+    save_all_modis_to_csv(modis_dir, "/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_vals.csv")
