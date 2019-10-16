@@ -1,9 +1,11 @@
 #assumes it's in the same folder as the sentinel channel means csv
 #plots distribution of average brightness in the sentinel channel
 import pandas
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
-sent_df = pandas.read_csv("sentinel_channel_means.csv")
+sent_df = pandas.read_csv("/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/DataVisualization/channel_means/sentinel_channel_means_200.csv")
 b1 = sent_df['B1']
 b2 = sent_df['B2']
 b3 = sent_df['B3']
@@ -49,6 +51,6 @@ plt.hist(b12,bins,alpha=.5,label = 'B12 (SWIR 2)')
 
 plt.xlabel("Bands 1-9 and 11-12 Mean Brightness")
 plt.ylabel("# Images")
-plt.title("Distribution of Band Mean Brightness")
+plt.title("Distribution of Sentinel-2 Band Mean Brightness (200x200)")
 plt.legend(loc='upper right')
 plt.show()

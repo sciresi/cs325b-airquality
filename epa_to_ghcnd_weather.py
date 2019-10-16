@@ -133,13 +133,12 @@ def weather_station_to_years_of_data(directory):
         csvfile.close()
 
     # Save weather_st_to_years_data dict to file for late ruse
-    print(len(weather_st_to_years_data))
     np.save('weather_station_years_data.npy', weather_st_to_years_data)
 
     # Load
     read_dictionary = np.load('weather_station_years_data.npy', allow_pickle=True).item()
-    print(len(read_dictionary))
-    #print(read_dictionary['hello']) # displays "world"
+
+
 
 
 
