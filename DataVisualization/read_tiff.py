@@ -140,42 +140,41 @@ def save_all_s2_imgs(directory):
         display_sentinel_gdal(directory, fname)
 
 
-def save_all_modis_to_csv(directory, csv_filename):
+def save_all_modis_to_csv(csv_filename):
     '''
     Saves the blue and green channel values of the 4 center pixel values
-    of every modis image in the given directory to the given csv named csv_filename.
+    of every modis image (in all year directories) to the given csv named csv_filename.
     '''
     
-    print("Saving 2x2 cropped modis images from directory: {} of size {} \n".format(directory, len(listdir(directory))))
-
     with open(csv_filename, 'w') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Filename", "Blue [0,0]", "Blue [0,1]", "Blue [1,0]", "Blue [1,1]", 
+        writer.writerow(["Filename", "Blue [0,0]", "Blue [0,1]", "Blue [1,0]", "Blue [1,1]",
                          "Green [0,0]", "Green [0,1]", "Green [1,0]", "Green [1,1]"])
         
-        for idx, fname in enumerate(listdir(directory)):
-            if idx % 100 == 0:
-                print("File {} name: {}".format(idx, fname))
+        base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/"
+        sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/", "2018_processed_100x100/", "2019_processed_100x100/"]
+        for sub_dir in sub_dirs:
 
-            img = read_middle(directory, fname, 2, 2)
-
-            blues = img[:,:,1]
-            greens = img[:,:,0]
-
-            # Mask missing values with small negative sentinel 
-            blues[blues<-50000] = -1
-            greens[greens<-50000] = -1
+            full_dir = base_dir + sub_dir
+            print("Saving 2x2 cropped modis images from directory: {} of size {} \n".format(full_dir, len(listdir(full_dir))))
             
-            num_pixels = greens.shape[0] * greens.shape[1]
-            writer.writerow([blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
-                             greens[1,0], greens[1,1]])
-           # means.append([fname, bm, gm, num_missing_b, num_missing_g])
+            for idx, fname in enumerate(listdir(full_dir)):
+                if idx % 100 == 0:
+                    print("File {} name: {}".format(idx, fname))
 
-    '''
-    with open("modis_channel_means_revised.csv", 'w') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["Filename", "Blue mean", "Green mean", "Num Missing Blue", "Num Missing Green"])
-        writer.writerows(means)'''
+                img = read_middle(full_dir, fname, 2, 2)
+
+                blues = img[:,:,1]
+                greens = img[:,:,0]
+
+                # Mask missing values with small negative sentinel 
+                blues[blues<-50000] = -1
+                greens[greens<-50000] = -1
+            
+                num_pixels = greens.shape[0] * greens.shape[1]
+                writer.writerow([blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
+                                 greens[1,0], greens[1,1]])
+
     csvfile.close()
 
         
@@ -184,8 +183,13 @@ def compute_means_all_files_modis(directory):
     '''
     Computes the mean value on the MODIS green and blue bands for all files in the directory given.
     '''
-    
-    print("Computing modis means for directory: {} of size {} \n".format(directory, len(listdir(directory))))
+
+    #base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/"
+    #sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/", "2018_processed_100x100/", "2019_processed_100x100/"]
+    #for sub_dir in sub_dirs:
+        
+    #    full_dir = base_dir+sub_dir   
+    #    print("Computing modis means for directory: {} of size {} \n".format(full_dir, len(listdir(full_dir))))
 
     means = []  # [filename, blue_mean, green_mean, # missing blue values, # missing green values]   
     for idx, fname in enumerate(listdir(directory)):
@@ -359,4 +363,4 @@ if __name__ == "__main__":
     #compute_means_all_files_sentinel(sent_dir)
     #display_sentinel_rast(sent_dir, sent_fp)
     #save_many_s2(sent_fp) 
-    save_all_modis_to_csv(modis_dir, "/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_vals.csv")
+    save_all_modis_to_csv("/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_all_years.csv")
