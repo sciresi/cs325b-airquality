@@ -170,7 +170,6 @@ def save_all_modis_to_csv(csv_filename):
                 # Mask missing values with small negative sentinel 
                 blues[blues<-50000] = -1
                 greens[greens<-50000] = -1
-            
                 num_pixels = greens.shape[0] * greens.shape[1]
                 writer.writerow([blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
                                  greens[1,0], greens[1,1]])
@@ -353,7 +352,7 @@ if __name__ == "__main__":
         display_sentinel_rast(dir_path, args.tif_path)
     '''
     
-    modis_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/2016_processed_100x100/"
+    #modis_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/2016_processed_100x100/"
     modis_fp = "2016_076_171670012.tif"
     # display_modis(dp, fp)
     # compute_means_all_files_modis(modis_dir)
@@ -364,3 +363,4 @@ if __name__ == "__main__":
     #display_sentinel_rast(sent_dir, sent_fp)
     #save_many_s2(sent_fp) 
     save_all_modis_to_csv("/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_all_years.csv")
+

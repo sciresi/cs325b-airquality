@@ -5,6 +5,8 @@
 import datetime
 import os
 import pandas as pd
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime as dt
@@ -12,6 +14,10 @@ import csv
 from os import listdir
 from os.path import isfile, join
 import collections
+import sys
+sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
+sys.path.insert(0, '/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/DataVisualization')
+from  modis_vis_with_epa import get_modis_means, get_epa, epa_to_modis_file_name
 
 data_header_names = [
         "ID",
@@ -100,7 +106,7 @@ def epa_to_closest_weather_station(directory):
                     closest_weather_stations.add(weather_station_id)
 
                     # double check we have weather data for the current closest station
-                    assert(weather_st_to_years_data[weather_station_id][1] >= year)
+                    #assert(weather_st_to_years_data[weather_station_id][1] >= year)
                 line_count += 1
         csvfile.close()
                                                                                                                                       
@@ -117,7 +123,7 @@ def weather_station_to_years_of_data(directory):
     postfix = ".csv"
     years = ['2016', '2017', '2018', '2019']
     filenames = [ (directory + prefix + year + postfix) for year in years]
-    for idx, f in enumerate(filenames):  #idx = 0, 1, 2, 3
+    for idx, f in enumerate(filenames): 
         with open(f) as csvfile:
             reader = csv.reader(csvfile,delimiter=',')
             line_count = 0
@@ -134,12 +140,6 @@ def weather_station_to_years_of_data(directory):
 
     # Save weather_st_to_years_data dict to file for late ruse
     np.save('weather_station_years_data.npy', weather_st_to_years_data)
-
-    # Load
-    read_dictionary = np.load('weather_station_years_data.npy', allow_pickle=True).item()
-
-
-
 
 
 def read_ghcn_data_file(directory, filename, elements=None, include_flags=False, dropna='all'):
@@ -176,8 +176,11 @@ def read_ghcn_data_file(directory, filename, elements=None, include_flags=False,
 
     # Save only the relevant years, 2016 onwards
     df = df[df.index >= '2016-01-01']
-
-    save_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/GHCND_weather/relevant_ghc/"
+    df.index.name = "Date"
+    df.index = df.index.strftime('%m/%d/%Y')
+    
+    #save_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/GHCND_weather/relevant_ghc/"
+    save_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/relevant_ghc/"
     csv_filename =  filename[:11] + ".csv"
     df.to_csv(save_dir + csv_filename,  encoding='utf-8')
 
@@ -194,22 +197,88 @@ def save_relevant_weather_data(data_dir):
     Used once to create this new directory of relevant files, and should not have to be used again as is.
     '''
     for idx, weather_st_id in enumerate(closest_weather_stations):
+        if idx % 100 == 0:
+            print("File {}\{}".format(idx, len(closest_weather_stations)))
         filename = weather_st_id + ".dly"
         w_id_df = read_ghcn_data_file(data_dir, filename, elements=None, include_flags=False, dropna='all')
 
 
+
+def combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv_file):
+
+
+    col_names = ['EPA Station ID', 'Date', 'Weather Station ID', 'PRCP','SNOW','SNWD','TMAX','TMIN'] 
+    master_df = pd.DataFrame(columns = col_names)
+
+    count = 0
+
+    epa_df_2016 = get_epa(epa_dir,'2016')
+    epa_df_2017 = get_epa(epa_dir,'2017')
+    epa_df_2018 = get_epa(epa_dir,'2018')
+    epa_df_2019 = get_epa(epa_dir,'2019') 
+    epa_df_all = [epa_df_2016, epa_df_2017, epa_df_2018, epa_df_2019]
+
+    loaded_weather_stations = {}  # dictionary that holds loaded weather dfs to avoid repeated .csv reading
+
+    # for every (epa, date) entry across all years, 
+    for i, epa_df_year in enumerate(epa_df_all):
+        year = i + 2016
+        print("Processing epa data from {}".format(year))
+
+        # go row by row (each successive date at first site, at second site, etc...
+        for date_at_site_idx, row in epa_df_year.iterrows():
+            if date_at_site_idx % 1000 == 0:
+                print("Processing site {} on {}. Reading {}/{}.".format(str(row['Site ID']), row['Date'], date_at_site_idx, len(epa_df_year)))
+
+            # get the .csv file of the closest weather station (containing full month data)
+            epa_station = str(row['Site ID'])
+            date = row['Date']
+            year = int(date[-4:])
+            
+            weather_station, dist = epa_to_weather_station[epa_station, year]
+
+            if weather_station in loaded_weather_stations:
+                weather_df_full = loaded_weather_stations[weather_station]
+
+            else:
+                weather_df_full = pd.read_csv(rel_data_dir + weather_station + ".csv")
+                weather_df_full =  weather_df_full.rename(columns={"Unnamed: 0": "Date"})
+
+            weather_df_date = weather_df_full[weather_df_full["Date"] == date]
+
+            # Finally, write to master file 
+            # if for some reason weather data is missing for that day, set weather variables to '-1'
+            if weather_df_date.empty:
+                master_df.loc[len(master_df)] = [epa_station, date, weather_station, -1, -1, -1, -1, -1]
+            else:
+                master_df.loc[len(master_df)] = [epa_station, date, weather_station, weather_df_date['PRCP'][weather_df_date.index[0]], 
+                                                 weather_df_date['SNOW'][weather_df_date.index[0]],
+                                                 weather_df_date['SNWD'][weather_df_date.index[0]], 
+                                                 weather_df_date['TMAX'][weather_df_date.index[0]],
+                                                 weather_df_date['TMIN'][weather_df_date.index[0]]]
+
+        master_df.to_csv("/Users/sarahciresi/Desktop/master_epa_new_" + str(year) +".csv", encoding='utf-8')
+
+    master_df.to_csv(master_csv_file, encoding='utf-8')
+
+        
 if __name__ == "__main__":
 
-    epa_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/epa/"
+    #epa_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/epa/"
+    epa_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/epa/"
     ghcnd_base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/GHCND_weather/"
+    ghcnd_base_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/"
     gh_data_dir = ghcnd_base_dir + "daily_data/ghcnd_hcn/"
     sent_path = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
     sent_file = "s2_2016_10_1002_171670012.tif"
     weath_file = "USC00457507.dly"
     
-    weather_station_to_years_of_data(ghcnd_base_dir)
+    #weather_station_to_years_of_data(ghcnd_base_dir)
     epa_to_closest_weather_station(ghcnd_base_dir)
     #save_relevant_weather_data(gh_data_dir)
-        
     
-
+    rel_data_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/relevant_ghc/"
+    master_csv = "/Users/sarahciresi/Desktop/master.csv"
+    #combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv)
+    
+    
