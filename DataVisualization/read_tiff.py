@@ -76,6 +76,29 @@ def display_modis(directory, filename):
     return img
 
 
+def get_sentinel_img(dir_path, filename, day_index, im_size):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
+    an im_size x im_size crop of the RGB image. Returns img (whose index in the stack of images is given by day_index)
+    '''
+    img = read_middle(dir_path, filename, im_size, im_size)
+    num_measurements = img.shape[2]//NUM_BANDS_SENTINEL
+
+    blues = img[:,:, 1 + day_index * NUM_BANDS_SENTINEL]   # Band 2
+    greens = img[:,:, 2 + day_index * NUM_BANDS_SENTINEL]  # Band 3
+    reds = img[:,:, 3 + day_index * NUM_BANDS_SENTINEL]    # Band 4
+
+    # Normalize the inputs
+    reds = normalize(reds)
+    greens = normalize(greens)
+    blues = normalize(blues)
+
+    img = np.dstack((reds, greens, blues)).astype(int)
+
+    return img
+
+
+
+
 def display_sentinel_gdal(dir_path, filename):
     ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
         an RGB image.
