@@ -222,7 +222,6 @@ def load_sentinel_dates(metadata_folder_path):
 
     file_to_dates_map = {}
     num_files = len(os.listdir(metadata_folder_path))
-    print("{} files in {}".format(num_files, metadata_folder_path))
     for i, filename in enumerate(os.listdir(metadata_folder_path)):
         file_base, file_extension = os.path.splitext(filename)
         if not filename.startswith("s2") or file_extension != ".txt":
