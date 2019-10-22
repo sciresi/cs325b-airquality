@@ -3,7 +3,7 @@ import os
 import ast
 import numpy as np
 
-def load_csv_dfs(folder_path):
+def load_csv_dfs(folder_path, blacklist = []):
     """
     Loads all .csv files from the specified folder and concatenates into one
     giant Pandas dataframe. Potential extension to different file types if we
@@ -13,6 +13,8 @@ def load_csv_dfs(folder_path):
     ----------
     folder_path : str
         Path to the folder from which to read .csv files.
+    blacklist : list[str]
+        List of filenames to ignore.
     
     Returns
     -------
@@ -23,6 +25,8 @@ def load_csv_dfs(folder_path):
     df_list = []
     for filename in os.listdir(folder_path):
         if os.path.splitext(filename)[1] != ".csv":
+            continue
+        if filename in blacklist:
             continue
         file_path = os.path.join(folder_path, filename)
         df_list.append(pd.read_csv(file_path))
@@ -230,3 +234,25 @@ def load_sentinel_dates(metadata_folder_path):
         dates = get_sentinel_dates(metadata_file_path)
         file_to_dates_map[file_base] = dates
     return file_to_dates_map
+
+def clean_df(df):
+    # TODO: add more filtering? change how we replace nans?
+    df = df[df['TMAX'].notnull()]
+    df = df[df['TMIN'].notnull()]
+    df['PRCP'].fillna(-1,inplace=True)
+    df['SNOW'].fillna(-1,inplace=True)
+    df['SNWD'].fillna(-1,inplace=True)
+    return df
+
+def get_feature_vectors(df):
+    # TODO: don't hardcode every single column!
+    
+    
+    dates = pd.to_datetime(df['Date'])
+    months = dates.dt.month
+    years = dates.dt.year
+    X = np.stack((df['SITE_LATITUDE'],df['SITE_LONGITUDE'],months,years,
+                  df['Blue [0,0]'],df['Blue [0,1]'], df['Blue [1,0]'], df['Blue [1,1]'],
+                  df['Green [0,0]'],df['Green [0,1]'], df['Green [1,0]'], df['Green [1,1]'],
+                  df['PRCP'], df['SNOW'], df['SNWD'], df['TMAX'], df['TMIN']),axis=1)
+    return X

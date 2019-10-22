@@ -94,6 +94,7 @@ def get_train_test_data(filename,under_fifty=True,filter_empty_temp=True):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     return X_train, X_test, y_train, y_test
 
-X_train, X_test, y_train, y_test = get_train_test_data("master_epa_weather_modis_sentinel_2016.csv")
-small_net, means, std = train_small_net(X_train, y_train)
-test_net(small_net, X_test, y_test, means, std)
+if __name__ == "__main__":
+    X_train, X_test, y_train, y_test = get_train_test_data("master_epa_weather_modis_sentinel_2016.csv")
+    small_net, means, std = train_small_net(X_train, y_train)
+    test_net(small_net, X_test, y_test, means, std)
