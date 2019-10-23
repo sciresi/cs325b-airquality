@@ -7,7 +7,7 @@ import rasterio
 from rasterio.plot import show
 import matplotlib.pyplot as plt
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, exists
 import collections
 
 NUM_BANDS_SENTINEL = 13
@@ -35,19 +35,25 @@ def read_middle(dir_path, tif_path, w, h):
     '''
     Reads the middle (w x h) image from the tif file of original size (WW x HH) given by tif_path using gdal 
     '''
+    if not exists(dir_path + tif_path):
+        return np.ones((w,h,2))*-1
+    
     gdal_dataset = gdal.Open(dir_path + tif_path)
+    if gdal_dataset == None:
+        print("Unable to open sentinel file {} at path {}".format(tif_path, dir_path))
+        return np.ones((w,h,2))*-1
+    
     WW, HH = gdal_dataset.RasterXSize, gdal_dataset.RasterYSize
 
     # Mid point minus half the width and height we want to read will give the top left corner
     if w > WW:
         return np.ones((w,h,2))*-1
-        #raise Exception("Requested width exceeds original tif width.")
+
     if h > HH:
         return np.ones((w,h,2))*-1
-        #raise Exception("Requested height exceeds original tif height.")
 
     gdal_result = gdal_dataset.ReadAsArray((WW - w)//2, (HH - h)//2, w, h)
-
+    
     # If a tif file has only 1 band, then the band dimension will be removed
     if len(gdal_result.shape) == 2:
         gdal_result = np.reshape(gdal_result, [1] + list(gdal_result.shape))
@@ -62,7 +68,6 @@ def display_modis(directory, filename):
         to convert to an RGB image.
         Saves the file with the same filename as the original .tif file.
     '''
-    #img = read(directory, filename)  
     img = read_middle(directory, filename, 2, 2)
     reds = np.zeros((img.shape[0],img.shape[1]))  
     img[img < -5000] = 0  # note missing values
@@ -80,9 +85,61 @@ def get_sentinel_img(dir_path, filename, day_index, im_size):
     ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
     an im_size x im_size crop of the RGB image. Returns img (whose index in the stack of images is given by day_index)
     '''
+    include = True
     img = read_middle(dir_path, filename, im_size, im_size)
     num_measurements = img.shape[2]//NUM_BANDS_SENTINEL
+    
+    # make sure we were able to correctly read in the image
+    if np.array_equal(img, (np.ones((im_size, im_size, 2))*-1)):
+        include = False
 
+    if (num_measurements == 0):
+        include = False
+        return img, include
+    
+    if (day_index >= num_measurements):
+        print("Sentinel file {} with {} measurements has incorrect index of {}".format(filename,num_measurements, day_index)) 
+        include = False
+        day_index = num_measurements-1
+        return img, include
+        
+    blues = img[:,:, 1 + day_index * NUM_BANDS_SENTINEL]   # Band 2
+    greens = img[:,:, 2 + day_index * NUM_BANDS_SENTINEL]  # Band 3
+    reds = img[:,:, 3 + day_index * NUM_BANDS_SENTINEL]    # Band 4
+
+    # Normalize the inputs
+    reds = normalize(reds)
+    greens = normalize(greens)
+    blues = normalize(blues)
+
+    img = np.dstack((reds, greens, blues)).astype(int)
+
+    return img, include
+
+def get_sentinel_img_from_row(row, dir_path, im_size):
+    ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
+    an im_size x im_size crop of the RGB image. Returns img (whose index in the stack of images is given by day_index)
+    '''
+    
+    filename = str(row['SENTINEL_FILENAME'])
+    day_index = int(row['SENTINEL_INDEX'])
+    
+    img = read_middle(dir_path, filename, im_size, im_size)
+    num_measurements = img.shape[2]//NUM_BANDS_SENTINEL
+    missing_im_array = np.ones((im_size, im_size, 2))*-1
+   
+    # make sure we were able to correctly read in the image
+    if np.array_equal(img, (np.ones((im_size, im_size, 2))*-1)):
+        include = False
+        img = missing_im_array
+        return img
+    if (num_measurements == 0):
+        img = missing_im_array
+        return img
+    if (day_index >= num_measurements):
+        img = missing_im_array
+        return img 
+        
     blues = img[:,:, 1 + day_index * NUM_BANDS_SENTINEL]   # Band 2
     greens = img[:,:, 2 + day_index * NUM_BANDS_SENTINEL]  # Band 3
     reds = img[:,:, 3 + day_index * NUM_BANDS_SENTINEL]    # Band 4
@@ -98,15 +155,15 @@ def get_sentinel_img(dir_path, filename, day_index, im_size):
 
 
 
-
 def display_sentinel_gdal(dir_path, filename):
     ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
         an RGB image.
     '''
     data = read(dir_path, filename)
-    print("Processing Sentinel-2 image with shape {}".format(data.shape))
     num_measurements = data.shape[2]//NUM_BANDS_SENTINEL                     
- 
+
+    print("Processing Sentinel-2 image with shape {}".format(data.shape))
+
     # for each daily measurement, get the corresponding blue, green, and red bands
     for day in range(0, num_measurements):
             
@@ -134,7 +191,7 @@ def display_sentinel_rast(dir_path, filename):
     '''
     dataset = rasterio.open(dir_path + filename)
     num_measurements = dataset.count // NUM_BANDS_SENTINEL
-    
+
     # for each daily measurement, get the corresponding blue, green, and red bands
     for day in range(0, num_measurements):
         blues = dataset.read(2 + day * NUM_BANDS_SENTINEL)
@@ -385,5 +442,10 @@ if __name__ == "__main__":
     #compute_means_all_files_sentinel(sent_dir)
     #display_sentinel_rast(sent_dir, sent_fp)
     #save_many_s2(sent_fp) 
-    save_all_modis_to_csv("/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_all_years.csv")
+    #save_all_modis_to_csv("/home/sarahciresi/gcloud/cs325b-airquality/modis_2x2_all_years.csv")
 
+    sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/"
+    filename = "s2_2016_7_20_10731005.tif" #"s2_2016_7_10731005.tif"
+    day_index = 2
+    #get_sentinel_img(sent_dir, filename, day_index, 200)
+    #display_sentinel_rast(sent_dir, filename) 

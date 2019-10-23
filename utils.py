@@ -256,3 +256,59 @@ def get_feature_vectors(df):
                   df['Green [0,0]'],df['Green [0,1]'], df['Green [1,0]'], df['Green [1,1]'],
                   df['PRCP'], df['SNOW'], df['SNWD'], df['TMAX'], df['TMIN']),axis=1)
     return X
+
+
+def remove_partial_missing_modis(df):
+    '''
+    Given a df, removes the entries with any missing modis values
+    '''
+    df = df[df['Blue [0,0]'] != -1]
+    df = df[df['Blue [0,1]'] != -1]
+    df = df[df['Blue [1,0]'] != -1]
+    df = df[df['Blue [1,1]'] != -1]
+    df = df[df['Green [0,0]'] != -1]
+    df = df[df['Green [0,1]'] != -1]
+    df = df[df['Green [1,0]'] != -1]
+    df = df[df['Green [1,1]'] != -1]
+
+    return df
+
+def remove_full_missing_modis(df):
+    ''' 
+    Given a df, removes the entries with fully missing modis values
+    (i.e. all 8 pixel values are missing) 
+    '''
+    # Todo 
+    pass
+        
+    
+def remove_missing_sent(full_df):
+    ''' 
+    Given the full dataframe, removes the datapoints with corrupted sentinel files.
+    The list of corrupted sentinel files to remove is given in file 
+    "final_sent_mismatch.csv". 
+    '''
+
+    to_remove_df = pandas.read_csv("final_sent_mismatch.csv")
+    to_remove_df = to_remove_df.rename(columns={"0": "Filename"})
+   
+    print("Removing {} files from original df of length {}".format(len(to_remove_df), len(full_df)))
+
+    # Should probably be able to hit this with an apply, but leaving for now
+    for i, row in to_remove_df.iterrows():
+        bad_file = row['Filename']
+        full_df = full_df[full_df['SENTINEL_FILENAME'] != bad_file]
+   
+    print("After removing files, df of length {}".format(len(full_df)))
+
+    return full_df
+
+
+def save_df_to_csv(df, csv_filename):
+    ''' 
+    Given a df of datapoints, saves to a .csv for later use.
+    '''
+    df.to_csv(csv_filename)
+    
+    
+    
