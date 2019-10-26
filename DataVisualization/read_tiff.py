@@ -165,24 +165,19 @@ def save_sentinel_from_eparow(row, dir_path, im_size):
     num_measurements = full_img.shape[2]//NUM_BANDS_SENTINEL
     
     if day_index >= num_measurements:
-        #print("error with sent file {} index {}".format(filename, day_index))
         print(filename)
         return
     
-    # retrieve the just the 13 channels for the given day 
+    # Retrieve values across 13 channels for the given day 
     img = full_img[:,:, 0 + day_index * NUM_BANDS_SENTINEL]
     
     for band in range(1, NUM_BANDS_SENTINEL):
         band_n = full_img[:,:, band + day_index * NUM_BANDS_SENTINEL]
         img = np.dstack((img, band_n)).astype(int)
-
-        #plt.imshow(img)
-        #plt.show()
-        #plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename + '__' + str(day) + '.png')
   
     save_to = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename[:-4] + '_' + str(day_index) + '.npy'
     np.save(save_to, img)            
-    #return img
+    
 
 def display_sentinel_gdal(dir_path, filename):
     ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
@@ -209,7 +204,7 @@ def display_sentinel_gdal(dir_path, filename):
 
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename + '__' + str(day) + '.png')
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2_display/'+ filename + '__' + str(day) + '.png')
                 
     return img
 
@@ -237,7 +232,7 @@ def display_sentinel_rast(dir_path, filename):
         # save image of each measurement
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/rast_' + filename + '_m' + str(day) +'.png')    
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2_display/' + filename + '_m' + str(day) +'.png')    
 
 
 def save_all_s2_imgs(directory):
@@ -291,7 +286,6 @@ def compute_means_all_files_modis(directory):
     '''
     Computes the mean value on the MODIS green and blue bands for all files in the directory given.
     '''
-
     #base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/"
     #sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/", "2018_processed_100x100/", "2019_processed_100x100/"]
     #for sub_dir in sub_dirs:
