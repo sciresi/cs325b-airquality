@@ -289,7 +289,8 @@ def remove_missing_sent(full_df):
     "final_sent_mismatch.csv". 
     '''
 
-    to_remove_df = pandas.read_csv("final_sent_mismatch.csv")
+    to_remove_csv = "/home/sarahciresi/gcloud/cs325b-airquality/data_csv_files/final_sent_mismatch.csv"
+    to_remove_df = pd.read_csv(to_remove_csv)
     to_remove_df = to_remove_df.rename(columns={"0": "Filename"})
    
     print("Removing {} files from original df of length {}".format(len(to_remove_df), len(full_df)))
@@ -311,4 +312,21 @@ def save_df_to_csv(df, csv_filename):
     df.to_csv(csv_filename)
     
     
+def load_sentinel_npy_files(epa_row, npy_files_dir_path):
+    ''' Reads in a sentinel.npy file which is a (h, w, 13) tensor of the sentinel image 
+    for the day specified by the 'SENTINEL_INDEX' in epa_row.
+    '''
+    original_tif_filename = str(epa_row['SENTINEL_FILENAME'])
+    index_in_original_tif =  int(epa_row['SENTINEL_INDEX'])
+    npy_filename = original_tif_filename[:-4] + '_' + str(index_in_original_tif) + '.npy'
+    full_npy_path = npy_files_dir_path + npy_filename
+    img = np.load(full_npy_path)
+    return img
+ 
     
+def get_PM_from_row(epa_row):
+    '''
+    Given a row in a df, returns the PM2.5 concentration. To be used with pandarallel parallel_apply().
+    '''
+    pm_val =  float(epa_row['Daily Mean PM2.5 Concentration'])
+    return pm_val

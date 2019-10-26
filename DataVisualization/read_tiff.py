@@ -153,7 +153,36 @@ def get_sentinel_img_from_row(row, dir_path, im_size):
 
     return img
 
+def save_sentinel_from_eparow(row, dir_path, im_size):
+    ''' Takes in a datapoint given by a row in the epa master csv, opens 
+    the associated sentinel tif file (which should be in the directory dir_path)
+    at the associated index and saves the image tensor to a file.
+    '''
+    filename = str(row['SENTINEL_FILENAME'])
+    day_index = int(row['SENTINEL_INDEX'])
+    
+    full_img = read_middle(dir_path, filename, im_size, im_size)
+    num_measurements = full_img.shape[2]//NUM_BANDS_SENTINEL
+    
+    if day_index >= num_measurements:
+        #print("error with sent file {} index {}".format(filename, day_index))
+        print(filename)
+        return
+    
+    # retrieve the just the 13 channels for the given day 
+    img = full_img[:,:, 0 + day_index * NUM_BANDS_SENTINEL]
+    
+    for band in range(1, NUM_BANDS_SENTINEL):
+        band_n = full_img[:,:, band + day_index * NUM_BANDS_SENTINEL]
+        img = np.dstack((img, band_n)).astype(int)
 
+        #plt.imshow(img)
+        #plt.show()
+        #plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename + '__' + str(day) + '.png')
+  
+    save_to = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename[:-4] + '_' + str(day_index) + '.npy'
+    np.save(save_to, img)            
+    #return img
 
 def display_sentinel_gdal(dir_path, filename):
     ''' Takes in a Sentinel tif file named filename in the directory dir_path and uses gdal to convert to
@@ -180,7 +209,7 @@ def display_sentinel_gdal(dir_path, filename):
 
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/gdal_'+ filename + '_m' + str(day) + '.png')
+        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'+ filename + '__' + str(day) + '.png')
                 
     return img
 
