@@ -164,7 +164,11 @@ def save_sentinel_from_eparow(row, dir_path, im_size):
     full_img = read_middle(dir_path, filename, im_size, im_size)
     num_measurements = full_img.shape[2]//NUM_BANDS_SENTINEL
     
+    # if index out of bounds, save filename to file with list of all problematic sentinel files
+    mismatch_file = "/home/sarahciresi/gcloud/cs325b-airquality/data_csv_files/new_sent_mismatch.txt"
     if day_index >= num_measurements:
+        with open(mismatch_file, "a+") as file:
+            file.write(filename + '\n')
         print(filename)
         return
     

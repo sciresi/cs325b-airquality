@@ -305,11 +305,16 @@ def remove_missing_sent(full_df):
     return full_df
 
 
-def save_df_to_csv(df, csv_filename):
+def remove_sent_and_save_df_to_csv(load_from_csv_filename, save_to_csv_filename):
     ''' 
-    Given a df of datapoints, saves to a .csv for later use.
+    Given a .csv of the df of current datapoints, loads the df, then
+    removes the missing sentinel from the updated bad-file list, and
+    resaves to a .csv for later use.
     '''
-    df.to_csv(csv_filename)
+    df = pd.read_csv(load_from_csv_filename)
+    df = remove_missing_sent(df)
+    df.to_csv(save_to_csv_filename)
+    
     
     
 def load_sentinel_npy_files(epa_row, npy_files_dir_path):
