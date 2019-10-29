@@ -2,9 +2,13 @@ import pandas as pd
 import os
 import ast
 import numpy as np
+<<<<<<< Updated upstream
 import json
 import shutil
 import torch
+=======
+import yaml
+>>>>>>> Stashed changes
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -34,6 +38,13 @@ def load_csv_dfs(folder_path, blacklist = []):
         file_path = os.path.join(folder_path, filename)
         df_list.append(pd.read_csv(file_path))
     return pd.concat(df_list)
+
+def read_yaml(yaml_file):
+    yaml_data = None
+    print("Loading yaml data from {}".format(os.path.abspath(yaml_file)))
+    with open(yaml_file, 'r') as input_file:
+        yaml_data = yaml.load(input_file, Loader=yaml.Loader)
+    return yaml_data
 
 def rename_sentinel_files(folder_path):
     """
