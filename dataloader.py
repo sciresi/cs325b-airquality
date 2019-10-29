@@ -7,8 +7,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import sys
-sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
-from read_tiff import save_sentinel_from_eparow
+from DataVisualization.read_tiff import save_sentinel_from_eparow
 
 
 class ToTensor(object):
