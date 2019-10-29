@@ -11,20 +11,22 @@ from torch.autograd import Variable
 
 from tqdm import tqdm
 from sklearn.metrics import r2_score
-#import matplotlib
-#matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
 sys.path.insert(0, '/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/DataVisualization')
 from dataloader import load_data
-from read_tiff import get_sentinel_img, get_sentinel_img_from_row, save_sentinel_from_eparow
 from pandarallel import pandarallel
+import read_tiff
 import utils
 
-class Small_CNN(nn.Module):
+class Small_CNN_Classifier(nn.Module):
     def __init__(self, device = "cpu"):
-        super(Small_CNN, self).__init__()
+        '''
+        Initializes a CNN to perform classification rather than regression.
+        Classifies PM2.5 above or below 12.
+        '''
+        super(Small_CNN_Classifier, self).__init__()
 
         in_channels = 13
         out_channels1 = 32
@@ -43,7 +45,8 @@ class Small_CNN(nn.Module):
         self.fc1 = nn.Linear(128 * 24 * 24, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 1) 
-
+        self.sigmoid = nn.Sigmoid()
+        
     def forward(self,x):
         x = F.relu(self.conv1(x))
         x = self.pool1(x)
@@ -56,20 +59,12 @@ class Small_CNN(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+        x = self.sigmoid(x)
         x = x.reshape(-1)
         
         return x
 
-def normalize_train(X_train):
-    
-    means = np.mean(X_train, axis = 0)
-    stdev = np.std(X_train, axis = 0)
-    X_train -= means
-    X_train /= stdev
-    
-    return X_train, means, stdev
 
-    
 def train(model, optimizer, loss_fn, dataloader):
     '''
     Trains the model for 1 epoch on all batches in the dataloader.
@@ -77,6 +72,8 @@ def train(model, optimizer, loss_fn, dataloader):
     # Set model to train mode
     model.train()
    
+    total_samples = 0
+    total_correct = 0
     loss_sum = 0
     loss_steps = 0
     running_loss = 0
@@ -102,47 +99,49 @@ def train(model, optimizer, loss_fn, dataloader):
 
             # Forward pass and calculate loss
             output_batch = model(input_batch) # y_pred
+            predictions = np.where(output_batch.data.cpu().numpy() < 0.5, 0, 1)
             loss = loss_fn(output_batch, labels_batch)
 
             # Compute gradients and perform parameter updates
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-       
-            #if i % 100 == 0:
+      
             # Move to cpu and convert to numpy
             output_batch = output_batch.data.cpu().numpy()
             labels_batch = labels_batch.data.cpu().numpy()
             
             # Compute batch metrics
-            r2 = r2_score(labels_batch, output_batch) 
-            summary_batch = {'average r2': r2, 'average MSE loss': loss.item()}
+            total_samples += labels_batch.shape[0]
+            num_correct = (predictions == labels_batch).sum().item()
+            total_correct += num_correct
+            
+            batch_accuracy = num_correct / labels_batch.shape[0]
+            summary_batch = {'accuracy': batch_accuracy, 'average CE loss': loss.item()}
             summaries.append(summary_batch)
             
             # Update the average loss
-            loss_sum += loss.item()
             loss_steps += 1
-            
-            # loss = average loss over batch * num examples in batch 
-            #-- unsure if this is not being computed correctly; much higher than it should be compared
-            # to the version saved in mean_metrics
+            loss_sum += loss.item()
             running_loss += loss.item() * input_batch.size(0)  
-            
+           
             # Display batch loss and r2
             loss_str = '{:05.3f}'.format(loss.item())
-            r2_str = '{:01.3f}'.format(r2)
-            t.set_postfix(loss=loss_str, r2=r2_str) 
+            acc_str = '{:05.3f}'.format(batch_accuracy)
+            t.set_postfix(loss=loss_str, acc=acc_str) 
             t.update()
     
     # Epoch loss
     epoch_loss = running_loss / train_dataset_size
+    loss_sum = loss_sum / loss_steps
     
     # Save metrics
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]}    
+    mean_metrics['epoch loss'] = epoch_loss
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
     print("Train metrics: {}".format(metrics_string))
-    print("Average train loss over epoch: {} ".format(epoch_loss))
-
+    print("Average train loss over epoch calculated via epoch_loss: {} ".format(epoch_loss))
+    print("Average train loss calculated via loss_sum: {}".format(loss_sum))
     return mean_metrics
 
 
@@ -153,10 +152,12 @@ def evaluate(model, loss_fn, dataloader):
     # Set model to eval mode
     model.eval()
    
-    summaries = []
+    total_samples = 0
+    total_correct = 0
     loss_sum = 0
     loss_steps = 0
     running_loss = 0
+    summaries  = []
     batch_size = 32
     num_batches = len(dataloader)
     val_dataset_size = num_batches * batch_size
@@ -179,31 +180,37 @@ def evaluate(model, loss_fn, dataloader):
 
                 # Forward pass and calculate loss
                 output_batch = model(input_batch) # y_pred
+                predictions = np.where(output_batch.data.cpu().numpy() < 0.5, 0, 1)
                 loss = loss_fn(output_batch, labels_batch)
 
                 # Move to cpu and convert to numpy
                 output_batch = output_batch.data.cpu().numpy()
                 labels_batch = labels_batch.data.cpu().numpy()
 
-                # Update the average loss
-                loss_sum += loss.item()
-                loss_steps += 1
-                running_loss += loss.item() * input_batch.size(0)
+                # Compute batch metrics
+                total_samples += labels_batch.shape[0]
+                num_correct = (predictions == labels_batch).sum().item()
+                total_correct += num_correct
 
-                # Save metrics
-                r2 = r2_score(labels_batch, output_batch) #.cpu().detach().numpy())
-                summary_batch = {'average r2': r2, 'average MSE loss': loss.item()}
+                batch_accuracy = num_correct / labels_batch.shape[0]
+                summary_batch = {'accuracy': batch_accuracy, 'average CE loss': loss.item()}
                 summaries.append(summary_batch)
+
+                # Update the average loss
+                loss_steps += 1
+                loss_sum += loss.item()
+                running_loss += loss.item() * input_batch.size(0)  
 
                 # Display batch loss and r2
                 loss_str = '{:05.3f}'.format(loss.item())
-                r2_str = '{:01.3f}'.format(r2)
-                t.set_postfix(loss=loss_str, r2=r2_str) 
+                acc_str = '{:05.3f}'.format(batch_accuracy)
+                t.set_postfix(loss=loss_str, acc=acc_str) 
                 t.update()
     
     # Epoch loss
     epoch_loss = running_loss / val_dataset_size
-   
+    loss_sum = loss_sum / loss_steps
+    
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]}    
     mean_metrics['epoch loss'] = epoch_loss
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
@@ -219,15 +226,18 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
     Trains the model and evaluates at every epoch
     '''
     
+    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/"
+
     # If a saved weights file for the model is specified, reload the weights
     if saved_weights_file is not None:
-        saved_weights_path = os.path.join(
-            args.model_dir, args.saved_weights_file + '.pth.tar')
+        saved_weights_path = os.path.join( model_dir, saved_weights_file + '.pth.tar')
         print("Restoring parameters from {}".format(saved_weights_path))
         utils.load_checkpoint(saved_weights_path, model, optimizer)
 
-    best_val_r2 = 0.0
-    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/"
+    best_acc = 0.0
+    
+    all_train_losses = []
+    all_val_losses = []
     
     for epoch in range(num_epochs):
         
@@ -238,45 +248,44 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
 
         # Evaluate on validation set
         val_mean_metrics = evaluate(model, loss_fn, val_dataloader)
+     
+        # Save losses from this epoch
+        all_train_losses.append( train_mean_metrics['epoch loss'] )
+        all_val_losses.append( val_mean_metrics['epoch loss'] )
         
-        val_r2 = val_mean_metrics['average r2']
-        is_best = val_r2 > best_val_r2
+        val_acc = val_mean_metrics['accuracy']
+        is_best = val_acc > best_acc
         
         # Save current model weights from this epoch
-        utils.save_checkpoint({'epoch': epoch + 1,
-                               'state_dict': model.state_dict(),
-                               'optim_dict': optimizer.state_dict()},
-                              is_best=is_best,
+        utils.save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(),
+                               'optim_dict': optimizer.state_dict()}, is_best=is_best,
                               checkpoint=model_dir)
 
         # If best_eval, save to best_save_path
         if is_best:
-            print("Found new best R2 value")
-            best_val_r2 = val_r2
+            print("Found new best accuracy")
+            best_acc = val_acc
 
             # Save best val metrics in a json file in the model directory
-            best_json_path = os.path.join(model_dir, "metrics_val_best_weights.json")
+            best_json_path = os.path.join(model_dir, "metrics_val_best_weights_classifier.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
 
         # Save latest val metrics in a json file in the model directory
-        last_json_path = os.path.join(model_dir, "metrics_val_last_weights.json")
+        last_json_path = os.path.join(model_dir, "metrics_val_last_weights_classifier.json")
         utils.save_dict_to_json(val_mean_metrics, last_json_path)
-    
-    '''
-    # Copy the model weights for best MSE loss/R2 
-    if epoch_loss > best_epoch_loss
-                    best_epoch_loss = epoch_loss
-                    best_model_wts_loss = copy.deepcopy(model.state_dict())
+   
+    # Plot losses
+    plt.plot(len(all_train_losses), all_train_losses, label='train')
+    plt.plot(len(all_val_losses), all_val_losses, label='val')
+    plt.legend(loc=2)
+    plt.xlabel("Epoch")
+    plt.ylabel("BCE Loss")
 
-    epoch_avg_r2 = mean_metrics['average r2']
-    if epoch_avg_r2 > best_epoch_r2
-                    best_epoch_r2 = epoch_avg_r2
-                    best_model_wts_r2 = copy.deepcopy(model.state_dict())
-    '''
-            
-        
-    # Return eval metrics
-    return val_mean_metrics
+    plt.show()
+    plt.savefig("classifier_losses.png")
+    
+    # Return train and eval metrics
+    return train_mean_metrics, val_mean_metrics
 
 
 if __name__ == "__main__":
@@ -288,13 +297,15 @@ if __name__ == "__main__":
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
 
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir)
+    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, classify=True)
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Small_CNN(device) 
+    model = Small_CNN_Classifier(device) 
     model.to(device)
     
     optimizer = optim.Adam(model.parameters())
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], num_epochs=5)
+    train_and_evaluate(model, optimizer, nn.BCELoss(),
+                       dataloaders['train'], dataloaders['val'], 
+                       num_epochs=10, saved_weights_file = "best")
    
     

@@ -24,9 +24,10 @@ class ToTensor(object):
 
 class SentinelDataset(Dataset):
     '''
-
+    Class for loading the dataset, where sentinel images are the input, 
+    and PM2.5 values from the master dataframe are the output.
     '''
-    def __init__(self, master_csv_file, s2_npy_dir, s2_tif_dir, threshold=None, transform=None):
+    def __init__(self, master_csv_file, s2_npy_dir, s2_tif_dir, threshold=None, transform=None, classify=False):
         ''' 
         master_csv_file:   master csv file (with corrupted sent. files filtered out)
         s2_npy_dir:        directory with sentinel .npy files
@@ -38,10 +39,15 @@ class SentinelDataset(Dataset):
         self.s2_npy_dir = s2_npy_dir
         self.s2_tif_dir = s2_tif_dir
         self.transform = transforms.Compose([ToTensor()])
-        
+        self.classify = classify
+
         if threshold != None:
             self.epa_df = self.epa_df[self.epa_df['Daily Mean PM2.5 Concentration'] < threshold]
-
+        
+        if self.classify == True:
+            
+            self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] > 12.0, 'above_12'] = 1 
+            self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
 
     def __len__(self):
         return len(self.epa_df)
@@ -65,9 +71,12 @@ class SentinelDataset(Dataset):
             save_sentinel_from_eparow(epa_row, self.s2_tif_dir, im_size=200)
             image = np.zeros((200,200, 13))
         
-        pm = epa_row['Daily Mean PM2.5 Concentration']
+        if self.classify == False:
+            pm = epa_row['Daily Mean PM2.5 Concentration']
+        else:
+            pm = epa_row['above_12']
+            
         sample = {'image': image, 'epa_row': epa_row, 'pm': pm}
-
         sample = self.transform(sample)
      
         return sample
@@ -79,7 +88,7 @@ class SentinelDataset(Dataset):
         return (array - np.min(array))*(255/(np.max(array)-np.min(array))).astype(int)
 
     
-def load_data(master_csv, npy_dir, sent_dir):
+def load_data(master_csv, npy_dir, sent_dir, classify=False):
     ''' 
     Function that loads the data.
     Loads df from the given master data file:    master_csv
@@ -87,15 +96,18 @@ def load_data(master_csv, npy_dir, sent_dir):
     Also takes in the directory storing sentinel 
     .tif files, to save .npy files if missing for some reason.
     
+    If classify = True: loads in epa df so that there is an extra column
+    with binary labels, indicating whether PM is > 12.0.
+    
     Creates and returns separate dataloaders for train, val,
     and test datasets.
     '''
-    dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir)
+    dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, classify=classify)
     
     # Need to also normalize the data, currently is not normalized...
     
     # Split 60/20/20 for now to train on less
-    split1, split2 = .6, .2 
+    split1, split2 = .1, .8 #.4, .4    #.6 .2
     full_ds_size = len(dataset) 
     indices = list(range(full_ds_size))
     split1 = int(np.floor(split1*full_ds_size))
@@ -103,13 +115,16 @@ def load_data(master_csv, npy_dir, sent_dir):
 
     train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
 
+    print("Looking at images {} - {} for train, {} - {} for val, and {} - {} for test."
+          .format(0, split1-1, split1, split2-1, split2, full_ds_size))
+    
     train_sampler = SubsetRandomSampler(train_indices)
     val_sampler = SubsetRandomSampler(val_indices)
     test_sampler = SubsetRandomSampler(test_indices)
     
     train_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=train_sampler, num_workers=4)
-    val_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=val_sampler, num_workers=4)
-    test_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=test_sampler, num_workers=4)
+    val_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=val_sampler, num_workers=2)
+    test_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=test_sampler, num_workers=0)
 
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
     
