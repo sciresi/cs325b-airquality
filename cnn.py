@@ -138,7 +138,8 @@ def train(model, optimizer, loss_fn, dataloader):
     epoch_loss = running_loss / train_dataset_size
     
     # Save metrics
-    mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]}    
+    mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]} 
+    mean_metrics['epoch loss'] = epoch_loss
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
     print("Train metrics: {}".format(metrics_string))
     print("Average train loss over epoch: {} ".format(epoch_loss))
@@ -186,8 +187,8 @@ def evaluate(model, loss_fn, dataloader):
                 labels_batch = labels_batch.data.cpu().numpy()
 
                 # Update the average loss
-                loss_sum += loss.item()
                 loss_steps += 1
+                loss_sum += loss.item()
                 running_loss += loss.item() * input_batch.size(0)
 
                 # Save metrics
@@ -219,15 +220,20 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
     Trains the model and evaluates at every epoch
     '''
     
+    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/"
+
     # If a saved weights file for the model is specified, reload the weights
     if saved_weights_file is not None:
-        saved_weights_path = os.path.join(
-            args.model_dir, args.saved_weights_file + '.pth.tar')
+        saved_weights_path = os.path.join(model_dir, saved_weights_file + '.pth.tar')
         print("Restoring parameters from {}".format(saved_weights_path))
         utils.load_checkpoint(saved_weights_path, model, optimizer)
 
     best_val_r2 = 0.0
-    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/"
+    
+    all_train_losses = []
+    all_val_losses = []
+    all_train_r2 = []
+    all_val_r2 = []
     
     for epoch in range(num_epochs):
         
@@ -239,15 +245,19 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
         # Evaluate on validation set
         val_mean_metrics = evaluate(model, loss_fn, val_dataloader)
         
+        # Save losses and r2 from this epoch
+        all_train_losses.append( train_mean_metrics['epoch loss'] )
+        all_val_losses.append( val_mean_metrics['epoch loss'] )
+        all_train_r2.append( train_mean_metrics['average r2'] )
+        all_val_r2.append( val_mean_metrics['average r2'] )
+    
         val_r2 = val_mean_metrics['average r2']
         is_best = val_r2 > best_val_r2
         
         # Save current model weights from this epoch
-        utils.save_checkpoint({'epoch': epoch + 1,
-                               'state_dict': model.state_dict(),
+        utils.save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(),
                                'optim_dict': optimizer.state_dict()},
-                              is_best=is_best,
-                              checkpoint=model_dir)
+                              is_best=is_best, checkpoint=model_dir)
 
         # If best_eval, save to best_save_path
         if is_best:
@@ -255,28 +265,39 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
             best_val_r2 = val_r2
 
             # Save best val metrics in a json file in the model directory
-            best_json_path = os.path.join(model_dir, "metrics_val_best_weights.json")
+            best_json_path = os.path.join(model_dir, "metrics_val_best_weights_regression.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
 
         # Save latest val metrics in a json file in the model directory
-        last_json_path = os.path.join(model_dir, "metrics_val_last_weights.json")
+        last_json_path = os.path.join(model_dir, "metrics_val_last_weights_regression.json")
         utils.save_dict_to_json(val_mean_metrics, last_json_path)
     
-    '''
-    # Copy the model weights for best MSE loss/R2 
-    if epoch_loss > best_epoch_loss
-                    best_epoch_loss = epoch_loss
-                    best_model_wts_loss = copy.deepcopy(model.state_dict())
-
-    epoch_avg_r2 = mean_metrics['average r2']
-    if epoch_avg_r2 > best_epoch_r2
-                    best_epoch_r2 = epoch_avg_r2
-                    best_model_wts_r2 = copy.deepcopy(model.state_dict())
-    '''
-            
+    print("Train losses: {} ".format(all_train_losses))
+    print("Val losses: {} ".format(all_val_losses))
+    
+    # Plot losses
+    plt.figure(1)
+    plt.plot(range(0, num_epochs), all_train_losses, label='train')
+    plt.plot(range(0, num_epochs), all_val_losses, label='val')
+    plt.legend(loc=2)
+    plt.xlabel("Epoch")
+    plt.ylabel("MSE Loss")
+    plt.title("Average MSE Loss over all epochs")
+    plt.show()
+    plt.savefig("regression_losses_4.png")
+     
+    plt.figure(2)
+    plt.plot(range(0, num_epochs), all_train_r2, label='train')
+    plt.plot(range(0, num_epochs), all_val_r2, label='val')
+    plt.legend(loc=2)
+    plt.title("Average R2 over all epochs")
+    plt.xlabel("Epoch")
+    plt.ylabel("R2")
+    plt.show()
+    plt.savefig("regression_r2_4.png")
         
-    # Return eval metrics
-    return val_mean_metrics
+    # Return train and eval metrics
+    return train_mean_metrics, val_mean_metrics
 
 
 if __name__ == "__main__":
@@ -294,7 +315,7 @@ if __name__ == "__main__":
     model = Small_CNN(device) 
     model.to(device)
     
-    optimizer = optim.Adam(model.parameters())
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], num_epochs=5)
+    optimizer = optim.Adam(model.parameters(), lr= 0.0001)
+    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], num_epochs=10)
    
     

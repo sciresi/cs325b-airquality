@@ -27,7 +27,8 @@ class SentinelDataset(Dataset):
     Class for loading the dataset, where sentinel images are the input, 
     and PM2.5 values from the master dataframe are the output.
     '''
-    def __init__(self, master_csv_file, s2_npy_dir, s2_tif_dir, threshold=None, transform=None, classify=False):
+    def __init__(self, master_csv_file, s2_npy_dir, s2_tif_dir, threshold=None, 
+                 transform=None, classify=False, sample_balanced=False):
         ''' 
         master_csv_file:   master csv file (with corrupted sent. files filtered out)
         s2_npy_dir:        directory with sentinel .npy files
@@ -39,6 +40,11 @@ class SentinelDataset(Dataset):
         self.s2_npy_dir = s2_npy_dir
         self.s2_tif_dir = s2_tif_dir
         self.transform = transforms.Compose([ToTensor()])
+        '''self.transform = transforms.Compose([transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.5,0.5,0.5,0.5,0.5,
+                                                                       0.5,0.5,0.5,0.5,0.5],
+                                                                  std=[0.229, 0.224, 0.225, 0.225,0.225,0.225,0.225,
+                                                                      0.225,0.225,0.225,0.225,0.225,0.225])#, ToTensor() ])
+        '''                                     
         self.classify = classify
 
         if threshold != None:
@@ -48,7 +54,13 @@ class SentinelDataset(Dataset):
             
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] > 12.0, 'above_12'] = 1 
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
-
+       
+        if sample_balanced == True:
+            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:1000]
+            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:1000]
+            self.epa_df = pd.concat([above_12_df, below_12_df], ignore_index=True)
+            self.epa_df = self.epa_df.sample(frac=1)
+    
     def __len__(self):
         return len(self.epa_df)
 
@@ -63,13 +75,13 @@ class SentinelDataset(Dataset):
         npy_filename = tif_filename[:-4] + '_' + str(tif_index) + '.npy'
         npy_fullpath = os.path.join(self.s2_npy_dir, npy_filename)
         
-        try:
-            image = np.load(npy_fullpath)
-      
-        except (FileNotFoundError, ValueError) as exc:
-            print(npy_fullpath)
-            save_sentinel_from_eparow(epa_row, self.s2_tif_dir, im_size=200)
-            image = np.zeros((200,200, 13))
+        image = np.load(npy_fullpath)
+        image = self.normalize(image)
+            
+        #except (FileNotFoundError, ValueError) as exc:
+        #    print(npy_fullpath)
+        #   save_sentinel_from_eparow(epa_row, self.s2_tif_dir, im_size=200)
+        #    image = np.zeros((200,200, 13))
         
         if self.classify == False:
             pm = epa_row['Daily Mean PM2.5 Concentration']
@@ -85,10 +97,10 @@ class SentinelDataset(Dataset):
     def normalize(self, array):
         if np.max(array) == np.min(array):
             return array
-        return (array - np.min(array))*(255/(np.max(array)-np.min(array))).astype(int)
+        return (array - np.min(array))*(255/(np.max(array)-np.min(array)))#.astype(int)
 
     
-def load_data(master_csv, npy_dir, sent_dir, classify=False):
+def load_data(master_csv, npy_dir, sent_dir, classify=False, sample_balanced=False):
     ''' 
     Function that loads the data.
     Loads df from the given master data file:    master_csv
@@ -102,7 +114,8 @@ def load_data(master_csv, npy_dir, sent_dir, classify=False):
     Creates and returns separate dataloaders for train, val,
     and test datasets.
     '''
-    dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, classify=classify)
+    dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, 
+                              classify=classify, sample_balanced=sample_balanced)
     
     # Need to also normalize the data, currently is not normalized...
     
@@ -113,6 +126,7 @@ def load_data(master_csv, npy_dir, sent_dir, classify=False):
     split1 = int(np.floor(split1*full_ds_size))
     split2 = full_ds_size - int(np.floor(split2*full_ds_size))
 
+    split1, split2 = 1000, 2000
     train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
 
     print("Looking at images {} - {} for train, {} - {} for val, and {} - {} for test."

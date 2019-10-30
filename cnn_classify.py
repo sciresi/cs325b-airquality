@@ -35,12 +35,12 @@ class Small_CNN_Classifier(nn.Module):
         
         self.device = device
         
-        self.conv1 = nn.Conv2d(in_channels, out_channels1, kernel_size=2, stride=1, padding=1)
-        self.pool1 = torch.nn.MaxPool2d(kernel_size=5, stride=2)
-        self.conv2 = nn.Conv2d(out_channels1, out_channels2, kernel_size=2, stride=1, padding=1)
-        self.pool2 = torch.nn.MaxPool2d(kernel_size=3, stride=2)
-        self.conv3 = nn.Conv2d(out_channels2, out_channels3, kernel_size=2, stride=1, padding=1)
-        self.pool3 = torch.nn.MaxPool2d(kernel_size=3, stride=2)
+        self.conv1 = nn.Conv2d(in_channels, out_channels1, kernel_size=5, stride=1, padding=1)
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(out_channels1, out_channels2, kernel_size=3, stride=1, padding=1)
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv3 = nn.Conv2d(out_channels2, out_channels3, kernel_size=3, stride=1, padding=1)
+        self.pool3 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.fc1 = nn.Linear(128 * 24 * 24, 120)
         self.fc2 = nn.Linear(120, 84)
@@ -63,6 +63,18 @@ class Small_CNN_Classifier(nn.Module):
         x = x.reshape(-1)
         
         return x
+
+    
+def weighted_binary_cross_entropy(output, target, weights=None):
+        
+    if weights is not None:
+        assert len(weights) == 2
+        
+        loss = weights[1] * (target * torch.log(output)) + weights[0] * ((1 - target) * torch.log(1 - output))
+    else:
+        loss = target * torch.log(output) + (1 - target) * torch.log(1 - output)
+
+    return torch.neg(torch.mean(loss))    
 
 
 def train(model, optimizer, loss_fn, dataloader):
@@ -100,8 +112,16 @@ def train(model, optimizer, loss_fn, dataloader):
             # Forward pass and calculate loss
             output_batch = model(input_batch) # y_pred
             predictions = np.where(output_batch.data.cpu().numpy() < 0.5, 0, 1)
+            #weights = torch.tensor([1, 50]).cuda()
+            #loss = weighted_binary_cross_entropy(output_batch, labels_batch, weights=weights)
             loss = loss_fn(output_batch, labels_batch)
-
+            
+            # Print predictions to sanity check not predicting all 0
+            '''if i % 20 == 0:
+                print("Output: {}".format(output_batch))
+                print("Predictions: {}".format(predictions))
+                print("Labels: {}".format(labels_batch))
+            '''        
             # Compute gradients and perform parameter updates
             optimizer.zero_grad()
             loss.backward()
@@ -182,7 +202,16 @@ def evaluate(model, loss_fn, dataloader):
                 output_batch = model(input_batch) # y_pred
                 predictions = np.where(output_batch.data.cpu().numpy() < 0.5, 0, 1)
                 loss = loss_fn(output_batch, labels_batch)
-
+                #weights = torch.tensor([1, 50]).cuda()
+                #loss = weighted_binary_cross_entropy(output_batch, labels_batch, weights=weights)
+                #loss = loss_fn(output_batch, labels_batch)
+            
+                # Print predictions to sanity check not predicting all 0
+                '''if i % 20 == 0:
+                    print("Output: {}".format(output_batch))
+                    print("Predictions: {}".format(predictions))
+                    print("Labels: {}".format(labels_batch))
+                '''    
                 # Move to cpu and convert to numpy
                 output_batch = output_batch.data.cpu().numpy()
                 labels_batch = labels_batch.data.cpu().numpy()
@@ -238,6 +267,8 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
     
     all_train_losses = []
     all_val_losses = []
+    all_train_accs = []
+    all_val_accs = []
     
     for epoch in range(num_epochs):
         
@@ -250,8 +281,11 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
         val_mean_metrics = evaluate(model, loss_fn, val_dataloader)
      
         # Save losses from this epoch
-        all_train_losses.append( train_mean_metrics['epoch loss'] )
-        all_val_losses.append( val_mean_metrics['epoch loss'] )
+        all_train_losses.append(train_mean_metrics['epoch loss'])
+        all_val_losses.append(val_mean_metrics['epoch loss'])
+        
+        all_train_accs.append(train_mean_metrics['accuracy'])
+        all_val_accs.append(val_mean_metrics['accuracy'])
         
         val_acc = val_mean_metrics['accuracy']
         is_best = val_acc > best_acc
@@ -267,22 +301,37 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader,
             best_acc = val_acc
 
             # Save best val metrics in a json file in the model directory
-            best_json_path = os.path.join(model_dir, "metrics_val_best_weights_classifier.json")
+            best_json_path = os.path.join(model_dir, "metrics_val_best_weights_classifier2.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
 
         # Save latest val metrics in a json file in the model directory
-        last_json_path = os.path.join(model_dir, "metrics_val_last_weights_classifier.json")
+        last_json_path = os.path.join(model_dir, "metrics_val_last_weights_classifier2.json")
         utils.save_dict_to_json(val_mean_metrics, last_json_path)
-   
+    
+    #print("Train losses: {} ".format(all_train_losses))
+    #print("Val losses: {} ".format(all_val_losses))
+    
     # Plot losses
-    plt.plot(len(all_train_losses), all_train_losses, label='train')
-    plt.plot(len(all_val_losses), all_val_losses, label='val')
+    plt.figure(1)
+    plt.plot(range(0, num_epochs), all_train_losses, label='train')
+    plt.plot(range(0, num_epochs), all_val_losses, label='val')
     plt.legend(loc=2)
     plt.xlabel("Epoch")
     plt.ylabel("BCE Loss")
-
+    plt.title("BCE Loss for 1000 Train and 1000 Val datapoints")
     plt.show()
     plt.savefig("classifier_losses.png")
+    
+    # Plot accuracies
+    plt.figure(2)
+    plt.plot(range(0, num_epochs), all_train_accs, label='train')
+    plt.plot(range(0, num_epochs), all_val_accs, label='val')
+    plt.legend(loc=2)
+    plt.xlabel("Epoch")
+    plt.ylabel("BCE Loss")
+    plt.title("Average accuracy over all batches for 1000 Train and 1000 Val datapoints")
+    plt.show()
+    plt.savefig("classifier_accuracies.png")
     
     # Return train and eval metrics
     return train_mean_metrics, val_mean_metrics
@@ -297,15 +346,15 @@ if __name__ == "__main__":
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
 
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, classify=True)
+    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, classify=True, sample_balanced=True)
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = Small_CNN_Classifier(device) 
     model.to(device)
     
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters(), lr = 0.0001)
     train_and_evaluate(model, optimizer, nn.BCELoss(),
                        dataloaders['train'], dataloaders['val'], 
-                       num_epochs=10, saved_weights_file = "best")
+                       num_epochs=30) 
    
     
