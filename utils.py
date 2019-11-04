@@ -5,6 +5,7 @@ import numpy as np
 import json
 import shutil
 import torch
+import matplotlib.pyplot as plt
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -363,15 +364,13 @@ def save_checkpoint(state, is_best, checkpoint):
         checkpoint: (string) folder where parameters are to be saved
     '''
     
-    filepath = os.path.join(checkpoint, 'last.pth.tar')
+    filepath = os.path.join(checkpoint, 'last_6.pth.tar')
     if not os.path.exists(checkpoint):
         print("Checkpoint Directory does not exist! Making directory {}".format(checkpoint))
         os.mkdir(checkpoint)
-    else:
-        print("Checkpoint Directory exists! ")
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'best.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint, 'best_6_scratch.pth.tar'))
 
         
 def load_checkpoint(checkpoint, model, optimizer=None):
@@ -392,3 +391,30 @@ def load_checkpoint(checkpoint, model, optimizer=None):
         optimizer.load_state_dict(checkpoint['optim_dict'])
 
     return checkpoint
+
+
+def plot_losses(train_losses, val_losses, num_epochs, save_as):
+    plt.clf()
+    plt.plot(range(0, num_epochs), train_losses, label='train')
+    plt.plot(range(0, num_epochs), val_losses, label='val')
+    #plt.axis([0, num_epochs, 0, 1])
+    plt.legend(loc=2)
+    plt.xlabel("Epoch")
+    plt.ylabel("MSE Loss")
+    plt.title("Average MSE Loss over " + str(num_epochs) + " epochs.")
+    plt.show()
+    plt.savefig(save_as)
+                                            
+def plot_r2(train_r2, val_r2, num_epochs, save_as):
+    plt.clf()
+    plt.plot(range(0, num_epochs), train_r2, label = 'train')
+    plt.plot(range(0, num_epochs), val_r2, label = 'val')
+    plt.axis([0, num_epochs, -0.2, 1])
+    plt.legend(loc=2)
+    plt.title("Average R2 over " + str(num_epochs) + " epochs.")
+    plt.xlabel("Epoch")
+    plt.ylabel("R2")
+    plt.show()
+    plt.savefig(save_as)
+    
+                                                                                        

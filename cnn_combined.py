@@ -22,9 +22,9 @@ from read_tiff import get_sentinel_img, get_sentinel_img_from_row, save_sentinel
 from pandarallel import pandarallel
 import utils
 
-class Small_CNN(nn.Module):
+class CNN_combined(nn.Module):
     def __init__(self, device = "cpu"):
-        super(Small_CNN, self).__init__()
+        super(CNN_combined, self).__init__()
 
         in_channels = 13
         out_channels1 = 32
@@ -33,32 +33,44 @@ class Small_CNN(nn.Module):
         
         self.device = device
         
+        # Conv portion
         self.conv1 = nn.Conv2d(in_channels, out_channels1, kernel_size=5, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(out_channels1)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv2 = nn.Conv2d(out_channels1, out_channels2, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_channels2)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv3 = nn.Conv2d(out_channels2, out_channels3, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(out_channels3)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.drop = nn.Dropout(p=0.2)
-        self.fc1 = nn.Linear(128 * 24 * 24, 120)
+        self.pool3 = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # Feed forward portion
+        self.fffc1 = nn.Linear(6,100)
+        self.fffc2 = nn.Linear(100,100)
+        self.fffc3 = nn.Linear(100,100)
+        
+        # Recombined portion
+        self.fc1 = nn.Linear(128 * 24 * 24 + 100, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 1) 
 
-    def forward(self, x):
+    def forward(self, x1, x2):
         
-        x = F.relu(self.conv1(x))
-        x = self.bn1(x)
-        x = self.pool1(x)
-        x = F.relu(self.conv2(x))
-        x = self.bn2(x)
-        x = self.pool2(x)
-        x = F.relu(self.conv3(x))
-        x = self.bn3(x)
-        x = self.pool3(x)
-        x = x.reshape(x.size(0), 128 * 24 * 24)
+        # Conv
+        x1 = F.relu(self.conv1(x1))
+        x1 = self.pool1(x1)
+        x1 = F.relu(self.conv2(x1))
+        x1 = self.pool2(x1)
+        x1 = F.relu(self.conv3(x1))
+        x1 = self.pool3(x1)
+        x1 = x1.reshape(x1.size(0), 128 * 24 * 24)
+        
+        # FF 
+        x2 = F.relu(self.fffc1(x2))
+        x2 = F.relu(self.fffc2(x2))
+        x2 = F.relu(self.fffc3(x2))
+        
+        # Combined 
+        x = torch.cat((x1, x2), dim=1)
+
+
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -66,7 +78,7 @@ class Small_CNN(nn.Module):
         
         return x
 
-def train(model, optimizer, loss_fn, dataloader, batch_size):
+def train(model, optimizer, loss_fn, dataloader):
     '''
     Trains the model for 1 epoch on all batches in the dataloader.
     '''
@@ -77,6 +89,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size):
     loss_steps = 0
     running_loss = 0
     summaries  = []
+    batch_size = 32
     num_batches = len(dataloader)
     train_dataset_size = num_batches * batch_size
     
@@ -102,7 +115,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size):
             features = Variable(features)
 
             # Forward pass and calculate loss
-            output_batch = model(input_batch)
+            output_batch = model(input_batch, features) # y_pred
             loss = loss_fn(output_batch, labels_batch)
 
             # Compute gradients and perform parameter updates
@@ -148,7 +161,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size):
     return mean_metrics
 
 
-def evaluate(model, loss_fn, dataloader, batch_size):
+def evaluate(model, loss_fn, dataloader):
     '''
     Evaluates the model for 1 epoch on all batches in the dataloader.
     '''
@@ -159,6 +172,7 @@ def evaluate(model, loss_fn, dataloader, batch_size):
     loss_sum = 0
     loss_steps = 0
     running_loss = 0
+    batch_size = 32
     num_batches = len(dataloader)
     val_dataset_size = num_batches * batch_size
     
@@ -184,7 +198,7 @@ def evaluate(model, loss_fn, dataloader, batch_size):
                 features = Variable(features)
 
                 # Forward pass and calculate loss
-                output_batch = model(input_batch)
+                output_batch = model(input_batch, features) # y_pred
                 loss = loss_fn(output_batch, labels_batch)
 
                 # Move to cpu and convert to numpy
@@ -219,14 +233,14 @@ def evaluate(model, loss_fn, dataloader, batch_size):
     return mean_metrics
 
 
-def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataloader, 
-                       batch_size, num_epochs, saved_weights_file = None):
+def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, 
+                       val_dataloader, num_epochs, saved_weights_file = None):
     '''
     Trains the model and evaluates at every epoch
     '''
     
-    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt3/"
-    saved_weights_file= None
+    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/"
+
     # If a saved weights file for the model is specified, reload the weights
     if saved_weights_file is not None:
         saved_weights_path = os.path.join(model_dir, saved_weights_file + '.pth.tar')
@@ -245,10 +259,10 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
         print("Running Epoch {}/{}".format(epoch, num_epochs))
               
         # Train on all batches
-        train_mean_metrics = train(model, optimizer, loss_fn, train_dataloader, batch_size)
+        train_mean_metrics = train(model, optimizer, loss_fn, train_dataloader)
 
         # Evaluate on validation set
-        val_mean_metrics = evaluate(model, loss_fn, val_dataloader, batch_size)
+        val_mean_metrics = evaluate(model, loss_fn, val_dataloader)
         
         # Save losses and r2 from this epoch
         all_train_losses.append( train_mean_metrics['epoch loss'] )
@@ -282,8 +296,7 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     print("_______________________________________")
     print("Train average r2s: {}".format(all_train_r2))
     print("Val average r2s: {}".format(all_val_r2))
-
-    '''
+        
     # Plot losses
     plt.figure(1)
     plt.plot(range(0, num_epochs), all_train_losses, label='train')
@@ -294,7 +307,7 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     plt.ylabel("MSE Loss")
     plt.title("Average MSE Loss for 10 Train + 10 Val examples over all epochs")
     plt.show()
-    plt.savefig("plots/reg_loss_bn_2000ex.png")
+    plt.savefig("plots/reg_loss_500ex_features.png")
      
     plt.figure(2)
     plt.plot(range(0, num_epochs), all_train_r2, label='train')
@@ -305,12 +318,8 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     plt.ylabel("R2")
     plt.axis([0, num_epochs, -1, 1])
     plt.show()
-    plt.savefig("plots/reg_r2_bn_2000ex.png")
-    '''
-    
-    utils.plot_losses(all_train_losses, all_val_losses, num_epochs, save_as="loss_30000.png")
-    utils.plot_r2(all_train_r2, all_val_r2, num_epochs, save_as="plots/r2_30000.png")
-                
+    plt.savefig("plots/reg_r2_500ex_features.png")
+        
     # Return train and eval metrics
     return train_mean_metrics, val_mean_metrics
 
@@ -324,15 +333,14 @@ if __name__ == "__main__":
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
 
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=64)#, sample_balanced=True)
+    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir)#, sample_balanced=True)
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Small_CNN(device) 
+    model = CNN_combined(device) 
     model.to(device)
     
-    optimizer = optim.Adam(model.parameters(), lr = 0.0003, weight_decay=1e-5) #0.0005
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'],
-                       batch_size=64, num_epochs=2
-                       ,saved_weights_file="best_5_scratch")
-                       
+    optimizer = optim.Adam(model.parameters(), lr= 0.001)
+    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], num_epochs=40) 
+                       #, saved_weights_file="saved_weights/checkpoints-normalized-im/best_2")
+   
     
