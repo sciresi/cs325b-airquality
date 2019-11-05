@@ -1,7 +1,11 @@
 import csv
 import argparse
 import time
-import gdal
+try:
+    import gdal
+except ModuleNotFoundError:
+    from osgeo import gdal
+
 import numpy as np
 import rasterio
 from rasterio.plot import show

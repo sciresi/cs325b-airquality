@@ -1,0 +1,17 @@
+experiment_name: # name of experiment
+model_type: # library of the model (e.g., PyTorchModel or ScikitLearnModel)
+model_impl: # name of model to train (should implemented in model_definitions.py)
+train_nonimage_csv: # csv storing non-image data (EPA, weather, MODIS, etc.) for training
+train_images: # folder storing image (Sentinel) data for training
+val_nonimage_csv: # csv storing non-image data (EPA, weather, MODIS, etc.) for validation
+val_images: # folder storing image (Sentinel) data for validation
+test_nonimage_csv: # csv storing non-image data (EPA, weather, MODIS, etc.) for testing
+test_images: # csv storing image (Sentinel) data for testing
+split_train_val: # proportion of the training data for validation
+split_train_test: # proporation of the training data for testing
+batch_size: # size of minibatches
+results_folder: # path to folder to save trained model and statistics
+optimizer: # name of optimizer from torch.optim to use (e.g., Adam)
+lr: # learning rate to use for optimizer (float)
+max_epoch: # number of epochs to train for (int)
+seed: # random seed (please use for reproducibility!)
