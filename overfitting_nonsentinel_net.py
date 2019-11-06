@@ -10,13 +10,13 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn import preprocessing
 from sklearn.metrics import mean_squared_error, r2_score, classification_report
-#summary
-#.0005 is a good lr
-#main code for the net has "MAIN" commented
+#from torch.utils.data import Dataset, DataLoader
+
+#learning rate of .005 gets decent results on full dataset (training MSE around 8; val MSE close to 10)
+
 
 torch.manual_seed(0)
 
-#main
 class Small_Net(nn.Module):
     def __init__(self):
         super(Small_Net, self).__init__()
@@ -38,8 +38,10 @@ class Small_Net(nn.Module):
         self.bn6 = nn.BatchNorm1d(200)
         self.bn7 = nn.BatchNorm1d(200)
         
-    def forward(self,x):
         
+    def forward(self,x):
+        #check if x and model are on cuda
+       
         x_1_input = self.bn1(x)
         x_1 = F.leaky_relu(self.fc1(x))
         x_2_input = self.bn2(torch.cat((x_1,x),1))
@@ -55,9 +57,9 @@ class Small_Net(nn.Module):
         x_7_input = self.bn7(torch.cat((x_6,x_5),1))
         x_7 = F.leaky_relu(self.fc7(x_7_input))
         x = self.final(x_7)
-        
+       
         return x
-#main
+
 def normalize_train(X_train):
     means = X_train.mean(axis=0)
     new_X = X_train-means
@@ -69,6 +71,8 @@ def normalize_train(X_train):
         if std[i]==0:
             std[i]=1
     new_X = new_X/std
+    print(means)
+    print(std)
     return new_X,means,std
 
 
@@ -79,7 +83,6 @@ def train_small_net(X_train, X_val, y_train, y_val, under_fifty=True, learning_r
     input_data = torch.from_numpy(input_data).float()
     input_y = torch.from_numpy(y_train).unsqueeze(1).float()
 
-    #MAIN; ten batches
     input_data_batches = []
     input_y_batches = []
     num_batches = 10
@@ -100,7 +103,11 @@ def train_small_net(X_train, X_val, y_train, y_val, under_fifty=True, learning_r
     X_val = X_val.to(device)
     y_val = y_val.to(device)
 
-    #MAIN; mse, gradient descent, 610 epochs
+    print(next(small_net.parameters()).is_cuda)
+    print(input_data.is_cuda)
+    
+    
+
     optimizer = optim.SGD(small_net.parameters(), lr=learning_rate, momentum = .9,weight_decay = .001)
     loss_fn = nn.MSELoss()
                                
@@ -126,20 +133,27 @@ def train_small_net(X_train, X_val, y_train, y_val, under_fifty=True, learning_r
             optimizer.step()
         train_acc.append(epoch_train_accs.mean())
         val_acc.append(epoch_val_accs.mean())
-        
+        """if epoch % 5 == 2:
+            print("epoch")
+            print(epoch)
+            print("training loss")
+            print(epoch_train_accs.mean())
+            print("val loss")
+            print(epoch_val_accs.mean())
+            y_val_pred_np = small_net(X_val).cpu().detach().numpy()
+            y_val_np = y_val.cpu().detach().numpy()
+            print(str(mean_squared_error(y_val_np,y_val_pred_np)))
+            print("val r2")
+            print(str(r2_score(y_val_np,y_val_pred_np)))"""
+            
 
-    y_val_pred = small_net(X_val)
-    val_loss = loss_fn(y_val_pred, y_val)
-    print("Val Mean squared error: %.2f"
-              % mean_squared_error(y_val.detach().numpy(), y_val_pred.detach().numpy()))
-    print("Check: Val Mean squared error: %.2f"
-              % val_loss.item())
-    print('Val Variance score: %.2f' % r2_score(y_val.detach().numpy(), y_val_pred.detach().numpy()))
+            
+                
     return small_net, means, std, train_acc, val_acc
 
 
       
-#under_fifty has now been effectively reinterpreted as 20.5
+#should normalize!!!
 def get_train_test_val_data(filenames,under_fifty=True,filter_empty_temp=True, single_month = False, single_year = False,filter_modis=False, test_portion=.1):
     
     df = pandas.DataFrame()
@@ -180,21 +194,14 @@ def get_train_test_val_data(filenames,under_fifty=True,filter_empty_temp=True, s
               df['Green [0,0]'],df['Green [0,1]'], df['Green [1,0]'], df['Green [1,1]'],
             df['PRCP'], df['SNOW'], df['SNWD'], df['TMAX'], df['TMIN']),axis=1)
     y = np.array(df['Daily Mean PM2.5 Concentration'])
-   
 
-    if under_fifty:
-        
-        print(test_portion)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_portion, random_state=0)
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.111111, random_state=0)
-    else:
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.222222, random_state=0)
-    return X_train, X_val, X_test, y_train, y_val, y_test
+
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=test_portion, random_state=0)
+    return X_train, X_val, y_train, y_val
 
 
 for test_size in [.1,.75, .7, .6, .5]:
-    X_train, X_val, X_test, y_train, y_val, y_test = get_train_test_val_data(["master_epa_weather_modis_sentinel_2016.csv",
+    X_train, X_val, y_train, y_val = get_train_test_val_data(["master_epa_weather_modis_sentinel_2016.csv",
                                                                          "master_epa_modis_weather_sentinel_2017.csv",
                                                                          "master_epa_modis_weather_2019.csv"],
                                                                          filter_modis=False,test_portion = test_size)
