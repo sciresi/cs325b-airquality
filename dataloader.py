@@ -7,8 +7,12 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import sys
-sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
-from read_tiff import save_sentinel_from_eparow
+from DataVisualization.read_tiff import save_sentinel_from_eparow
+import pdb
+import utils
+
+BATCH_SIZE = 32
+
 
 MIN_PM_VALUE = -9.7
 MAX_PM_VALUE = 20.5
@@ -17,33 +21,93 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        image, lat, lon = sample['image'], sample['lat'], sample['lon']
-        prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
-        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
-        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
-        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
-        pm = sample['pm']
-    
-        # Swap channel axis
-        image = image.transpose((2, 0, 1))
-        return {'image': torch.from_numpy(np.asarray(image)), 
-                'lat': torch.from_numpy(np.asarray(lat)),
-                'lon': torch.from_numpy(np.asarray(lon)),
-                'prec': torch.from_numpy(np.asarray(prec)),
-                'snow': torch.from_numpy(np.asarray(snow)),
-                'snwd': torch.from_numpy(np.asarray(snwd)),
-                'tmin': torch.from_numpy(np.asarray(tmin)),
-                'tmax': torch.from_numpy(np.asarray(tmax)),
-                'month': torch.from_numpy(np.asarray(month)),
-                'mb1': torch.from_numpy(np.asarray(mb1)),
-                'mb2': torch.from_numpy(np.asarray(mb2)),
-                'mb3': torch.from_numpy(np.asarray(mb3)),
-                'mb4': torch.from_numpy(np.asarray(mb4)),
-                'mg1': torch.from_numpy(np.asarray(mg1)),
-                'mg2': torch.from_numpy(np.asarray(mg2)),
-                'mg3': torch.from_numpy(np.asarray(mg3)),
-                'mg4': torch.from_numpy(np.asarray(mg4)),
-                'pm': torch.from_numpy(np.asarray(pm))} 
+        tensors = {"non_image" : torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float),
+                   "label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
+        
+        if "image" in sample:
+            # Swap channel axis
+            image = sample["image"].transpose((2, 0, 1))
+            tensors["image"] = torch.from_numpy(np.asarray(image)).to(dtype=torch.float)
+        
+        return tensors
+
+class CombinedDataset(Dataset):
+    """
+    Class encapsulating the dataset of EPA/Weather data and Sentimel images.
+    """
+    def __init__(self, master_csv_file, image_dir = None, threshold=None, classify=False):
+        """
+        Parameters
+        ----------
+        master_csv_file : str
+            Path to csv file of EPA and weather data (with corrupted Sentinel
+            files filtered out).
+        image_dir : str
+            Path to directory with image .npy files
+        threshold : float
+            Filter out data points with PM2.5 readings >= this value.
+        classify : bool
+            Whether to treat the dataset as a classification problem.
+                
+        Returns
+        -------
+        An instance of a CombinedDataset.
+        """
+        self.epa_df = pd.read_csv(master_csv_file)
+        self.image_dir = image_dir
+        self.transform = transforms.Compose([ToTensor()])
+        self.classify = classify
+
+        if threshold != None:
+            self.epa_df = self.epa_df[self.epa_df['Daily Mean PM2.5 Concentration'] < threshold]
+        
+        if self.classify == True:
+            
+            self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] > 12.0, 'above_12'] = 1 
+            self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
+            
+        self.epa_df = utils.clean_df(self.epa_df)
+
+    def __len__(self):
+        return len(self.epa_df)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        sample = {}
+        epa_row = self.epa_df.iloc[idx]
+        sample["non_image"], _ = utils.get_epa_features(epa_row)
+        if self.image_dir:
+            tif_filename = str(epa_row["SENTINEL_FILENAME"])
+            tif_index =  int(epa_row["SENTINEL_INDEX"])
+            npy_filename = tif_filename[:-4] + "_" + str(tif_index) + ".npy"
+            npy_fullpath = os.path.join(self.image_dir, npy_filename)
+        
+            try:
+                image = np.load(npy_fullpath)
+
+            except (FileNotFoundError, ValueError) as exc:
+                image = np.zeros((200,200, 13))
+                
+            sample["image"] = image
+        
+        if self.classify == False:
+            pm = epa_row["Daily Mean PM2.5 Concentration"]
+        else:
+            pm = epa_row["above_12"]
+            
+        sample["label"] = pm
+        sample = self.transform(sample)
+     
+        return sample
+        
+
+    def normalize(self, array):
+        if np.max(array) == np.min(array):
+            return array
+        return (array - np.min(array))*(255/(np.max(array)-np.min(array))).astype(int)
+>>>>>>> 1cc3e81c7c3ef49ee8a1bbcc49cafbd1c58f7f16
 
 class Normalize(object):
     """Normalize image Tensors."""
@@ -162,8 +226,7 @@ class SentinelDataset(Dataset):
         sample = self.transform(sample)
      
         return sample
-        
-
+    
     def normalize(self, array):
         
         # Get maxes and mins across all 13 channels
@@ -180,13 +243,128 @@ class SentinelDataset(Dataset):
         
         # Scale each channel individually to be between 0-255
         return (array - maxs)*(255/diffs)
-
     
+
 def normalize_pm(pm, min_pm, max_pm):
     if min_pm == max_pm:
         return pm
-    return (pm - min_pm)/(max_pm-min_pm)    
-     
+    return (pm - min_pm)/(max_pm-min_pm)     
+    
+def get_sampler(dataset_size, train_end, proportion):
+    split_length = int(np.floor(proportion * dataset_size))
+    sampler_end = train_end
+    sampler_start = sampler_end - split_length
+    return SubsetRandomSampler(np.arange(sampler_start, sampler_end))
+
+def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0, 
+              **kwargs):
+    """
+    Reads in training, val, and test data as specified by the provided dict. 
+    Returns a dictionary of torch.util.data.DataLoaders for train and
+    (possibly) val and test.
+    
+    Parameters
+    ----------
+    train_nonimage_csv : str
+        The path to the .csv file that stores ground data (e.g., weather and 
+        EPA readings) as well as MODIS readings.
+    
+    **kwargs
+        The following keyword arguments are supported and will influence the
+        resulting data that is returned.
+        
+        * batch_size : int
+            The minibatch size for training (and validation/testing).
+            
+        * num_workers : int
+            The number of workers to use to load data (Note: introduces randomness
+            that may not be seedable).
+        
+        * train_images: str
+            The path to the .npy files that store Sentinel images.
+          
+        * val_nonimage_csv : str
+            Same as "train_nonimage_csv" but for a specific set of validation
+            data.
+          
+        * val_images : str
+            Same as "train_images" but for a specific set of validation data.
+            Only considered if val_nonimage_csv is provided.
+          
+        * test_nonimage_csv : str
+            Same as "train_nonimage_csv" but for a specific set of test data.
+          
+        * test_images : str
+            Same as "train_images" but for a specific set of test data.
+            
+        * split_train_val : float
+            Only considered if val_nonimage_csv is not provided. Splits the
+            training data into train/val sets, where the proportion of the
+            training data is determined by the specified float.
+            
+        * split_train_test : float
+            Only considered if test_nonimage_csv is not provided. Splits the
+            training data into train/test sets, where the proportion of the
+            training data is determined by the specified float.
+            
+    Returns
+    -------
+    dataloaders : dict
+        Dictionary with the following possible keys:
+        
+        * "train" (required) : DataLoader for training data
+        * "val" (optional) : DataLoader for validation data
+        * "test" (optional) : DataLoader for testing data
+    """
+    print("Using {} workers to load data...".format(num_workers))
+    train_dataset = CombinedDataset(train_nonimage_csv, kwargs.get("train_images"))
+    train_end = len(train_dataset)
+    if kwargs.get("test_nonimage_csv"):
+        test_dataset = CombinedDataset(kwargs["test_nonimage_csv"], kwargs.get("test_images"))
+        print("{} entries in test set".format(len(test_dataset)))
+        test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True,
+                                    num_workers = num_workers)
+    elif kwargs.get("split_train_test"):       
+        test_sampler = get_sampler(len(train_dataset), train_end, kwargs["split_train_test"])
+        print("{} entries in test set".format(len(test_sampler)))
+        test_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=test_sampler,
+                                    num_workers = num_workers)
+        train_end -= len(test_sampler)
+    else:
+        test_dataloader = None
+        
+    if kwargs.get("val_nonimage_csv"):
+        val_dataset = CombinedDataset(kwargs["val_nonimage_csv"], kwargs.get(val_images))
+        print("{} entries in validation set".format(len(val_dataset)))
+        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, 
+                                    num_workers = num_workers, shuffle=True)
+    elif kwargs.get("split_train_val"):
+        val_sampler = get_sampler(len(train_dataset), train_end, kwargs["split_train_val"])
+        print("{} entries in validation set".format(len(val_sampler)))
+        val_dataloader = DataLoader(train_dataset, batch_size=batch_size, 
+                                    num_workers = num_workers, sampler=val_sampler)
+        train_end -= len(val_sampler)
+    else:
+        val_dataloader = None
+    
+    if train_end < len(train_dataset):
+        train_sampler = SubsetRandomSampler(np.arange(train_end))
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, 
+                                      num_workers = num_workers)
+    else:
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, 
+                                      num_workers = num_workers, shuffle=True)
+
+    print("{} samples in training set".format(train_end))
+        
+    dataloaders = {"train" : train_dataloader}
+    if test_dataloader:
+        dataloaders["test"] = test_dataloader
+    if val_dataloader:
+        dataloaders["val"] = val_dataloader
+    return dataloaders
+
+# TODO: do we need this anymore?
 def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_balanced=False):
     ''' 
     Function that loads the data.
@@ -228,8 +406,6 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
     
     return dataloaders
-
-
 
 def show_samples(dataset, num_samples):
     fig = plt.figure()

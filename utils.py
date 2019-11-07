@@ -6,6 +6,7 @@ import numpy as np
 import json
 import shutil
 import torch
+import yaml
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn as nn
@@ -38,6 +39,13 @@ def load_csv_dfs(folder_path, blacklist = []):
         file_path = os.path.join(folder_path, filename)
         df_list.append(pd.read_csv(file_path))
     return pd.concat(df_list)
+
+def read_yaml(yaml_file):
+    yaml_data = None
+    print("Loading yaml data from {}".format(os.path.abspath(yaml_file)))
+    with open(yaml_file, 'r') as input_file:
+        yaml_data = yaml.load(input_file, Loader=yaml.Loader)
+    return yaml_data
 
 def rename_sentinel_files(folder_path):
     """
@@ -249,20 +257,18 @@ def clean_df(df):
     df['PRCP'].fillna(-1,inplace=True)
     df['SNOW'].fillna(-1,inplace=True)
     df['SNWD'].fillna(-1,inplace=True)
+    df = df[df['SENTINEL_INDEX'].notnull()]
     return df
 
-def get_feature_vectors(df):
-    # TODO: don't hardcode every single column!
-    
-    
-    dates = pd.to_datetime(df['Date'])
-    months = dates.dt.month
-    years = dates.dt.year
-    X = np.stack((df['SITE_LATITUDE'],df['SITE_LONGITUDE'],months,years,
-                  df['Blue [0,0]'],df['Blue [0,1]'], df['Blue [1,0]'], df['Blue [1,1]'],
-                  df['Green [0,0]'],df['Green [0,1]'], df['Green [1,0]'], df['Green [1,1]'],
-                  df['PRCP'], df['SNOW'], df['SNWD'], df['TMAX'], df['TMIN']),axis=1)
-    return X
+def get_epa_features(row, filter_empty_temp=True):
+    date = pd.to_datetime(row['Date'])
+    month = date.month
+    X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
+                  row['Blue [0,0]'],row['Blue [0,1]'], row['Blue [1,0]'], row['Blue [1,1]'],
+                  row['Green [0,0]'],row['Green [0,1]'], row['Green [1,0]'], row['Green [1,1]'],
+                  row['PRCP'], row['SNOW'], row['SNWD'], row['TMAX'], row['TMIN']])
+    y = np.array(row['Daily Mean PM2.5 Concentration'])
+    return X, y
 
 
 def remove_partial_missing_modis(df):
