@@ -19,7 +19,10 @@ class ToTensor(object):
     def __call__(self, sample):
         image, lat, lon = sample['image'], sample['lat'], sample['lon']
         prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
-        tmin, tmax, month, pm = sample['tmin'], sample['tmax'], sample['month'], sample['pm']
+        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
+        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
+        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
+        pm = sample['pm']
     
         # Swap channel axis
         image = image.transpose((2, 0, 1))
@@ -32,6 +35,14 @@ class ToTensor(object):
                 'tmin': torch.from_numpy(np.asarray(tmin)),
                 'tmax': torch.from_numpy(np.asarray(tmax)),
                 'month': torch.from_numpy(np.asarray(month)),
+                'mb1': torch.from_numpy(np.asarray(mb1)),
+                'mb2': torch.from_numpy(np.asarray(mb2)),
+                'mb3': torch.from_numpy(np.asarray(mb3)),
+                'mb4': torch.from_numpy(np.asarray(mb4)),
+                'mg1': torch.from_numpy(np.asarray(mg1)),
+                'mg2': torch.from_numpy(np.asarray(mg2)),
+                'mg3': torch.from_numpy(np.asarray(mg3)),
+                'mg4': torch.from_numpy(np.asarray(mg4)),
                 'pm': torch.from_numpy(np.asarray(pm))} 
 
 class Normalize(object):
@@ -40,7 +51,10 @@ class Normalize(object):
     def __call__(self, sample):
         image, lat, lon = sample['image'], sample['lat'], sample['lon']
         prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
-        tmin, tmax, month, pm = sample['tmin'], sample['tmax'], sample['month'], sample['pm']
+        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
+        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
+        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
+        pm = sample['pm']
         
         img_normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.5, 0.5, 0.5, 
                                                        0.5,0.5,0.5,0.5,0.5,0.5,0.5],
@@ -48,9 +62,13 @@ class Normalize(object):
                                                    0.225,0.225,0.225,0.225,0.225,0.225,0.225])
                                                    
         image = img_normalization(image) 
+        # normalize features 
         #pm = normalize_pm(pm, min_pm = MIN_PM_VALUE, max_pm = MAX_PM_VALUE)
         return {'image': image, 'lat': lat, 'lon':lon, 'prec': prec, 'snow':snow,
-                'snwd': snwd, 'tmin':tmin, 'tmax':tmax, 'month': month, 'pm': pm} 
+                'snwd': snwd, 'tmin':tmin, 'tmax':tmax, 'month': month, 
+                'mb1': mb1, 'mb2': mb2, 'mb3': mb3, 'mb4': mb4, 
+                'mg1': mg1, 'mg2': mg2, 'mg3': mg3, 'mg4': mg4, 
+                'pm': pm} 
 
 
     
@@ -69,6 +87,7 @@ class SentinelDataset(Dataset):
         transform:         any data transforms to apply.
         '''
         self.epa_df = pd.read_csv(master_csv_file)
+        self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
         self.s2_npy_dir = s2_npy_dir
         self.s2_tif_dir = s2_tif_dir
         self.transform = transforms.Compose([ToTensor()]) #, Normalize()])
@@ -83,8 +102,8 @@ class SentinelDataset(Dataset):
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
        
         if sample_balanced == True:
-            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:2000]
-            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:2000]
+            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:1000]
+            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:1000]
             self.epa_df = pd.concat([above_12_df, below_12_df], ignore_index=True)
             self.epa_df = self.epa_df.sample(frac=1)
             
@@ -114,6 +133,10 @@ class SentinelDataset(Dataset):
         max_temp = float(epa_row['TMAX'])
         date = pd.to_datetime(epa_row['Date'])
         month = float(date.month)
+        mod_b1, mod_b2 = float(epa_row['Blue [0,0]']), float(epa_row['Blue [0,1]'])
+        mod_b3, mod_b4 = float(epa_row['Blue [1,0]']), float(epa_row['Blue [1,1]'])
+        mod_g1, mod_g2 = float(epa_row['Green [0,0]']), float(epa_row['Green [0,1]'])
+        mod_g3, mod_g4 = float(epa_row['Green [1,0]']), float(epa_row['Green [1,1]'])        
         
         tif_filename = str(epa_row['SENTINEL_FILENAME'])
         tif_index =  int(epa_row['SENTINEL_INDEX'])
@@ -131,7 +154,10 @@ class SentinelDataset(Dataset):
         pm = epa_row['above_12'] if self.classify == True else epa_row['Daily Mean PM2.5 Concentration']
             
         sample = {'image': image, 'lat': lat, 'lon': lon, 'prec': prec, 'snow':snow, 
-                  'snwd': snwd, 'tmin': min_temp, 'tmax': max_temp, 'month': month, 'pm': pm}
+                  'snwd': snwd, 'tmin': min_temp, 'tmax': max_temp, 'month': month, 
+                  'mb1': mod_b1, 'mb2': mod_b2, 'mb3': mod_b3, 'mb4': mod_b4, 
+                  'mg1': mod_g1, 'mg2': mod_g2, 'mg3': mod_g3, 'mg4': mod_g4, 
+                  'pm': pm}
         
         sample = self.transform(sample)
      
@@ -176,7 +202,7 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     and test datasets.
     '''
     dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, 
-                              classify=classify, sample_balanced=sample_balanced)
+                              threshold=20.5, classify=classify, sample_balanced=sample_balanced)
         
     # Split 60/20/20 for now to train on less
     split1, split2 = .1, .8 #.4, .4    #.6 .2
@@ -185,7 +211,7 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     split1 = int(np.floor(split1*full_ds_size))
     split2 = full_ds_size - int(np.floor(split2*full_ds_size))
 
-    split1, split2 = 30000, 32000 #2000, 4000 #1000, 2000 #30000, 31000
+    split1, split2 = 1000, 2000 #20000, 25000 #1000, 2000 #10000, 15000 #2000, 4000 #1000, 2000 #30000, 31000
     train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
 
     print("Looking at images {} - {} for train, {} - {} for val, and {} - {} for test."
@@ -197,7 +223,7 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     
     train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=4)
     val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=2)
-    test_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, sampler=test_sampler, num_workers=0)
+    test_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
 
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
     

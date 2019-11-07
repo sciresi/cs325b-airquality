@@ -1,11 +1,14 @@
 import pandas as pd
 import os
 import ast
+import csv
 import numpy as np
 import json
 import shutil
 import torch
 import matplotlib.pyplot as plt
+import seaborn as sns
+import torch.nn as nn
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -393,7 +396,7 @@ def load_checkpoint(checkpoint, model, optimizer=None):
     return checkpoint
 
 
-def plot_losses(train_losses, val_losses, num_epochs, save_as):
+def plot_losses(train_losses, val_losses, num_epochs, num_ex, save_as):
     plt.clf()
     plt.plot(range(0, num_epochs), train_losses, label='train')
     plt.plot(range(0, num_epochs), val_losses, label='val')
@@ -401,20 +404,127 @@ def plot_losses(train_losses, val_losses, num_epochs, save_as):
     plt.legend(loc=2)
     plt.xlabel("Epoch")
     plt.ylabel("MSE Loss")
-    plt.title("Average MSE Loss over " + str(num_epochs) + " epochs.")
+    plt.title("Average MSE Loss of " + str(num_ex) + " over " + str(num_epochs) + " epochs.")
     plt.show()
     plt.savefig(save_as)
                                             
-def plot_r2(train_r2, val_r2, num_epochs, save_as):
+def plot_r2(train_r2, val_r2, num_epochs, num_ex, save_as):
     plt.clf()
     plt.plot(range(0, num_epochs), train_r2, label = 'train')
     plt.plot(range(0, num_epochs), val_r2, label = 'val')
     plt.axis([0, num_epochs, -0.2, 1])
     plt.legend(loc=2)
-    plt.title("Average R2 over " + str(num_epochs) + " epochs.")
+    plt.title("Average R2 of " + str(num_ex) + " over " + str(num_epochs) + " epochs.")
     plt.xlabel("Epoch")
     plt.ylabel("R2")
     plt.show()
     plt.savefig(save_as)
     
-                                                                                        
+
+def plot_filters_single_channel(t):
+    
+    #kernels depth * number of kernels
+    nplots = t.shape[0]*t.shape[1]
+    ncols = 12
+    
+    nrows = 1 + nplots//ncols
+    #convert tensor to numpy image
+    t = t.data.cpu().numpy()
+    npimg = np.array(t, np.float32)
+    
+    count = 0
+    fig = plt.figure(figsize=(ncols, nrows))
+    
+    #looping through all the kernels in each channel
+    for i in range(t.shape[0]):
+        for j in range(t.shape[1]):
+            count += 1
+            ax1 = fig.add_subplot(nrows, ncols, count)
+            npimg = np.array(t[i, j], np.float32)
+            npimg = (npimg - np.mean(npimg)) / np.std(npimg)
+            npimg = np.minimum(1, np.maximum(0, (npimg + 0.5)))
+            ax1.imshow(npimg)
+            ax1.set_title(str(i) + ',' + str(j))
+            ax1.axis('off')
+            ax1.set_xticklabels([])
+            ax1.set_yticklabels([])
+   
+    plt.tight_layout()
+    plt.show()
+    plt.savefig("image.png")
+    
+    
+    
+def plot_filters_multi_channel(t):
+    
+    #get the number of kernals
+    num_kernels = t.shape[0]    
+    
+    #define number of columns for subplots
+    num_cols = 12
+    #rows = num of kernels
+    num_rows = num_kernels
+    
+    #set the figure size
+    fig = plt.figure(figsize=(num_cols,num_rows))
+    
+    #looping through all the kernels
+    for i in range(t.shape[0]):
+        ax1 = fig.add_subplot(num_rows,num_cols,i+1)
+        
+        #for each kernel, we convert the tensor to numpy 
+        npimg = np.array(t[i].numpy(), np.float32)
+        #standardize the numpy image
+        npimg = (npimg - np.mean(npimg)) / np.std(npimg)
+        npimg = np.minimum(1, np.maximum(0, (npimg + 0.5)))
+        npimg = npimg.transpose((1, 2, 0))
+        ax1.imshow(npimg)
+        ax1.axis('off')
+        ax1.set_title(str(i))
+        ax1.set_xticklabels([])
+        ax1.set_yticklabels([])
+        
+    plt.savefig('myimage.png', dpi=100)    
+    plt.tight_layout()
+    plt.show()
+    plt.savefig("image2.png")
+    
+    
+def plot_weights(model, layer_num, single_channel = True, collated = False):
+    #extracting the model features at the particular layer number
+    layer = model.conv1
+    
+    #checking whether the layer is convolution layer or not 
+    if isinstance(layer, nn.Conv2d):
+        #getting the weight tensor data
+        weight_tensor = layer.weight.data
+        if single_channel:
+            if collated:
+                plot_filters_single_channel_big(weight_tensor)
+            else:
+                plot_filters_single_channel(weight_tensor)
+        else:
+            if weight_tensor.shape[1] == 3:
+                plot_filters_multi_channel(weight_tensor)
+            else:
+                print("Can only plot weights with three channels with single channel = False")
+    else:
+        print("Can only visualize layers which are convolutional")
+
+        
+def save_predictions(indices, predictions, labels, batch_size, save_to):
+    '''
+    Method to save indices, labels, and predictions of a given batch. 
+    All batches over entire epoch will be saved to the same file,
+    so that each .csv file has the predictions over all samples.
+    '''
+    with open(save_to, 'a') as fd:
+        writer = csv.writer(fd)
+        for i in range(0, batch_size):
+            index = indices[i]
+            y_pred = predictions[i]
+            y_true = labels[i]
+            row = [index, y_pred, y_true]
+            writer.writerow(row)
+
+   

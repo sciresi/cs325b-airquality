@@ -49,15 +49,16 @@ class Small_CNN(nn.Module):
 
     def forward(self, x):
         
-        x = F.relu(self.conv1(x))
-        x = self.bn1(x)
+        x = self.conv1(x)
+        x = F.relu(self.bn1(x))
         x = self.pool1(x)
-        x = F.relu(self.conv2(x))
-        x = self.bn2(x)
+        x = self.conv2(x)
+        x = F.relu(self.bn2(x))
         x = self.pool2(x)
-        x = F.relu(self.conv3(x))
-        x = self.bn3(x)
+        x = self.conv3(x)
+        x = F.relu(self.bn3(x))
         x = self.pool3(x)
+        x = self.drop(x)
         x = x.reshape(x.size(0), 128 * 24 * 24)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -225,7 +226,7 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     Trains the model and evaluates at every epoch
     '''
     
-    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt3/"
+    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt-cnn-new/"
     saved_weights_file= None
     # If a saved weights file for the model is specified, reload the weights
     if saved_weights_file is not None:
@@ -279,37 +280,12 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     
     print("Train losses: {} ".format(all_train_losses))
     print("Val losses: {} ".format(all_val_losses))
-    print("_______________________________________")
     print("Train average r2s: {}".format(all_train_r2))
     print("Val average r2s: {}".format(all_val_r2))
-
-    '''
-    # Plot losses
-    plt.figure(1)
-    plt.plot(range(0, num_epochs), all_train_losses, label='train')
-    plt.plot(range(0, num_epochs), all_val_losses, label='val')
-    plt.axis([0, num_epochs, 0, 40])
-    plt.legend(loc=2)
-    plt.xlabel("Epoch")
-    plt.ylabel("MSE Loss")
-    plt.title("Average MSE Loss for 10 Train + 10 Val examples over all epochs")
-    plt.show()
-    plt.savefig("plots/reg_loss_bn_2000ex.png")
-     
-    plt.figure(2)
-    plt.plot(range(0, num_epochs), all_train_r2, label='train')
-    plt.plot(range(0, num_epochs), all_val_r2, label='val')
-    plt.legend(loc=2)
-    plt.title("Average R2 for 10 Train + 10 Val examples over all epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("R2")
-    plt.axis([0, num_epochs, -1, 1])
-    plt.show()
-    plt.savefig("plots/reg_r2_bn_2000ex.png")
-    '''
     
-    utils.plot_losses(all_train_losses, all_val_losses, num_epochs, save_as="loss_30000.png")
-    utils.plot_r2(all_train_r2, all_val_r2, num_epochs, save_as="plots/r2_30000.png")
+    num_ex = 100
+    utils.plot_losses(all_train_losses, all_val_losses, num_epochs, num_ex, save_as="plots/loss_cnn1_100_bal.png")
+    utils.plot_r2(all_train_r2, all_val_r2, num_epochs,num_ex, save_as="plots/r2_cnn1_100_bal.png")
                 
     # Return train and eval metrics
     return train_mean_metrics, val_mean_metrics
@@ -324,15 +300,15 @@ if __name__ == "__main__":
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
 
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=64)#, sample_balanced=True)
+    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=64, sample_balanced=True)
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = Small_CNN(device) 
     model.to(device)
     
-    optimizer = optim.Adam(model.parameters(), lr = 0.0003, weight_decay=1e-5) #0.0005
+    optimizer = optim.Adam(model.parameters(), lr = 0.0005, weight_decay=1e-4) #0.0005
     train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'],
-                       batch_size=64, num_epochs=2
-                       ,saved_weights_file="best_5_scratch")
+                       batch_size=64, num_epochs=50)
+                       #,saved_weights_file="best_5_scratch") # in checkpt3 
                        
     
