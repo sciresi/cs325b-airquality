@@ -21,13 +21,15 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        tensors = {"non_image" : torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float),
-                   "label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
+        tensors = {"label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
         
         if "image" in sample:
             # Swap channel axis
             image = sample["image"].transpose((2, 0, 1))
             tensors["image"] = torch.from_numpy(np.asarray(image)).to(dtype=torch.float)
+
+        if "non_image" in sample:
+            tensors["non_image"] = torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float)
         
         return tensors
 
@@ -107,7 +109,6 @@ class CombinedDataset(Dataset):
         if np.max(array) == np.min(array):
             return array
         return (array - np.min(array))*(255/(np.max(array)-np.min(array))).astype(int)
->>>>>>> 1cc3e81c7c3ef49ee8a1bbcc49cafbd1c58f7f16
 
 class Normalize(object):
     """Normalize image Tensors."""
