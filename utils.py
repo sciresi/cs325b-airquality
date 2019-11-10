@@ -389,21 +389,3 @@ def get_output_dim(model):
     last_layer = list(model.children())[-1]
     return last_layer.out_features
 
-def compute_dataloader_mean_std(dataloader):
-    """
-    Iterates through a torch.utils.data.DataLoader and computes means and
-    standard deviations. Useful for computing normalization constants over a
-    training dataset.
-
-    Parameters
-    ----------
-    dataloader : torch.utils.data.DataLoader
-        DataLoader to iterate through to compute means and standard deviations.
-
-    Returns
-    -------
-    normalizations : dict
-        Dictionary mapping each input key (e.g., "non_image" or "image")
-        to another dict of { "mean", "std" }.
-    """
-    pass

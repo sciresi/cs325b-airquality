@@ -427,5 +427,54 @@ def show_samples(dataset, num_samples):
             plt.show()
             break
 
+def compute_dataloader_mean_std(dataloader):
+    """
+    Iterates through a torch.utils.data.DataLoader and computes means and
+    standard deviations. Useful for computing normalization constants over a
+    training dataset. This method first computes the sample first and second
+    moments and uses that to calculate the sample standard deviation.
+
+    Parameters
+    ----------
+    dataloader : torch.utils.data.DataLoader
+        DataLoader to iterate through to compute means and standard deviations.
+
+    Returns
+    -------
+    normalizations : dict
+        Dictionary mapping each input key (e.g., "non_image" or "image")
+        to another dict of { "mean", "std" }.
+    """
+    moments = {}
+    counts = {}
+    for batch in dataloader:
+        for key in batch.keys():
+            if key == "label" or key == "output": # no need to normalize output
+                continue
+            data = batch[key]
+            num_dims = data.size(1) # channels for images, features for non_images
+            first = moments[key].get("first", torch.empty(num_dims))
+            second = normalizations[key].get("second", torch.empty(num_dims))
+            data_count = np.prod((data.size()[0], *data.size()[2:])) # total elements to sum
+            total_count = counts.key(key, 0) # total elements we've seen so far
             
+            axes = [0, *range(2, len(data.size()))] # sum over all but axis = 1
+            data_sum = data.sum(axes)
+            data_ss = data.pow(2).sum(axes)
+            first = (total_count * first + data_sum) / (total_count + data_count)
+            second = (total_count * second + data_ss) / (total_count + data_count)
+
+            moments[key]["first"] = first
+            moments[key]["second"] = second
+            counts[key] = total_count + data_count
+
+    normalizations = {}
+    for key in moments.keys():
+        normalizations[key] = {}
+        first_moment = moments[key]["first"]
+        second_moment = moments[key]["second"]
+        normalizations[key]["mean"] = first_moment
+        normalizations[key]["std"] = torch.sqrt(second_moment - first_moment ** 2)
+        
+    return normalizations
 
