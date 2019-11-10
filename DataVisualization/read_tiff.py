@@ -39,10 +39,11 @@ def read_middle(dir_path, tif_path, w, h):
     '''
     Reads the middle (w x h) image from the tif file of original size (WW x HH) given by tif_path using gdal 
     '''
-    if not exists(dir_path + tif_path):
+    file_path = join(dir_path, tif_path)
+    if not exists(file_path):
         return np.ones((w,h,2))*-1
     
-    gdal_dataset = gdal.Open(dir_path + tif_path)
+    gdal_dataset = gdal.Open(file_path)
     if gdal_dataset == None:
         print("Unable to open sentinel file {} at path {}".format(tif_path, dir_path))
         return np.ones((w,h,2))*-1
