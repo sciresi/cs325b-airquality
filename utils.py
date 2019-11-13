@@ -10,6 +10,7 @@ import yaml
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn as nn
+from sklearn.metrics import r2_score
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -257,7 +258,15 @@ def clean_df(df):
     df['PRCP'].fillna(-1,inplace=True)
     df['SNOW'].fillna(-1,inplace=True)
     df['SNWD'].fillna(-1,inplace=True)
+    df = df[df['PRCP']>-1]
+    #df = df[df['SNOW']>-1]
+    #df = df[df['SNWD']>-1]
     df = df[df['SENTINEL_INDEX'].notnull()]
+    
+    # Fix indexing
+    df = df.rename(columns={'Unnamed: 0': 'Index'}) # probably remove, wrong col
+    df = df.drop(['Unnamed: 0.1', 'Unnamed: 0.1.1', 'Unnamed: 0.1.1.1'], axis=1)
+    
     return df
 
 def get_epa_features(row, filter_empty_temp=True):
@@ -269,6 +278,27 @@ def get_epa_features(row, filter_empty_temp=True):
                   row['PRCP'], row['SNOW'], row['SNWD'], row['TMAX'], row['TMIN']])
     y = np.array(row['Daily Mean PM2.5 Concentration'])
     return X, y
+
+def get_epa_features_no_weather(row, filter_empty_temp=True):
+    date = pd.to_datetime(row['Date'])
+    month = date.month
+    X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
+                  row['Blue [0,0]'],row['Blue [0,1]'], row['Blue [1,0]'], row['Blue [1,1]'],
+                  row['Green [0,0]'],row['Green [0,1]'], row['Green [1,0]'], row['Green [1,1]']])
+    y = np.array(row['Daily Mean PM2.5 Concentration'])
+    return X, y
+
+def get_epa_features_no_snow(row, filter_empty_temp=True):
+    date = pd.to_datetime(row['Date'])
+    month = date.month
+    X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
+                  row['Blue [0,0]'],row['Blue [0,1]'], row['Blue [1,0]'], row['Blue [1,1]'],
+                  row['Green [0,0]'],row['Green [0,1]'], row['Green [1,0]'], row['Green [1,1]'],
+                  row['PRCP'], row['TMAX'], row['TMIN']])
+
+    y = np.array(row['Daily Mean PM2.5 Concentration'])
+    return X, y
+
 
 
 def remove_partial_missing_modis(df):
@@ -526,6 +556,7 @@ def save_predictions(indices, predictions, labels, batch_size, save_to):
     '''
     with open(save_to, 'a') as fd:
         writer = csv.writer(fd)
+        #writer.writerow(["Index", "Prediction", "Label"])
         for i in range(0, batch_size):
             index = indices[i]
             y_pred = predictions[i]
@@ -533,4 +564,83 @@ def save_predictions(indices, predictions, labels, batch_size, save_to):
             row = [index, y_pred, y_true]
             writer.writerow(row)
 
-   
+def mse_row(row):
+    '''                                                                                                                                                                                                     
+    Given a row of a df which is an example of the                                                                                                                                                          
+    form (index, prediction, label),                                                                                                                                                                        
+    computes the MSE of the example.                                                                                                                                                                        
+    '''
+    pred = row['Prediction']
+    label = row['Label']
+    mse = (label-pred)**2
+    return mse
+
+
+def compute_r2(predictions_csv):
+    '''                                                 
+    Takes in .csv created from save_predictions of (indices, predictions, labels)
+    for each example, and calculates total R2 over the dataset.
+    '''
+    df = pd.read_csv(predictions_csv)
+    
+    indices = df['Index']
+    predictions = df['Prediction']
+    labels = df['Label']
+    
+    r2 = r2_score(labels, predictions)
+    return r2
+    
+def plot_loss_histogram(predictions_csv):
+    '''                                                 
+    Takes in .csv created from save_predictions of (indices, predictions, labels)
+    for each example, and calculates MSE of each example.     
+    Then plots the histogram of the losses.  
+    '''
+    pandarallel.initialize()
+
+    df = pd.read_csv(predictions_csv)
+    mses = df.parallel_apply(mse_row, axis=1)
+    df['MSE'] = mses
+
+    # compute mean and stdev of MSEs                                                                                                                                                                        
+    mean_mse = np.mean(mses)
+    stddev_mse = np.std(mses)
+
+    stdev1 = mean_mse + stddev_mse
+    stdev2 = stdev1 + stddev_mse
+    stdev3 = stdev2 + stddev_mse
+
+    bins = 100
+    plt.axis([0, 1600, 0, 30]) # really should be number of examples                                                                                                                                        
+    plt.hist(mses, bins,alpha=.9,label = 'MSE loss')
+    min_ylim, max_ylim = plt.ylim()
+    plt.axvline(mean_mse, color='k', linestyle='dashed', linewidth=1)
+    plt.text(mean_mse*1.1, max_ylim*0.9, 'Mean = {:.2f}'.format(mean_mse), fontsize=10)
+
+    plt.axvline(stdev1, color='k', linestyle='dashed', linewidth=1)
+    plt.text(stdev1*1.1, max_ylim*0.7,  'Mean+1stdv = {:.2f}'.format(stdev1), fontsize=10)
+
+    plt.axvline(stdev2, color='k', linestyle='dashed', linewidth=1)
+    plt.text(stdev2*1.1, max_ylim*0.6, 'Mean+2std = {:.2f}'.format(stdev2) , fontsize=10)
+
+    plt.axvline(stdev3, color='k', linestyle='dashed', linewidth=1)
+    plt.text(stdev3*1.1, max_ylim*0.5, 'Mean+3std = {:.2f}'.format(stdev3), fontsize=10)
+
+    plt.savefig("loss-hist.png")
+    plt.show() 
+    
+    above_three_stdv = df[df['MSE']>stdev3]
+    sorted_above_three = above_three_stdv.sort_values(by=['Index'])
+    print(sorted_above_three)
+    
+    
+def load_prism_data():
+    base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/PRISM_weather/extracted_weather_data/"
+    prism_2016_ppt = base_dir+ "PRISM_ppt_stable_4kmD2_2016.csv"
+    prism_2016_tdmean = base_dir+ "PRISM_tdmean_stable_4kmD1_2016.csv"
+    prism_2016_tmean = base_dir+ "PRISM_tmean_stable_4kmD1_2016.csv"
+
+    ppt_df = pd.read_csv(prism_2016_ppt)
+    print(ppt_df.columns)
+    return ppt_df
+    

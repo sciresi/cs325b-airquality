@@ -66,8 +66,14 @@ class Small_CNN(nn.Module):
         x = x.reshape(-1)
         
         return x
+    
+    def init_weights(self, m):
+        if type(m) == nn.Conv2d or type(m) == nn.Linear:
+            nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            m.bias.data.fill_(0.01)
+            
 
-def train(model, optimizer, loss_fn, dataloader, batch_size):
+def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=None):
     '''
     Trains the model for 1 epoch on all batches in the dataloader.
     '''
@@ -85,50 +91,37 @@ def train(model, optimizer, loss_fn, dataloader, batch_size):
           
     with tqdm(total=num_batches) as t:
         
-        for i, sample_batch in enumerate(dataloader):
+        for i, sample in enumerate(dataloader):
 
-            input_batch, labels_batch = sample_batch['image'], sample_batch['pm']
-            lat, lon, mon = sample_batch['lat'], sample_batch['lon'], sample_batch['month']
-            tmax, tmin, prec = sample_batch['tmax'], sample_batch['tmin'], sample_batch['prec']
-            features = torch.stack((lat, lon, mon, tmax, tmin, prec), dim=1)
-            #input_lat_lon = torch.stack((lat, lon), dim=1)
-    
+            indices, inputs, labels = sample['index'], sample['image'], sample['label']
+
             # Move to GPU if available       
-            input_batch = input_batch.to(model.device, dtype=torch.float)
-            labels_batch = labels_batch.to(model.device, dtype=torch.float)
-            features = features.to(model.device, dtype=torch.float)
+            inputs = inputs.to(model.device, dtype=torch.float)
+            labels = labels.to(model.device, dtype=torch.float)
 
             # Convert to torch Variables
-            input_batch, labels_batch = Variable(input_batch), Variable(labels_batch)
-            features = Variable(features)
+            inputs = Variable(inputs)
+            labels = Variable(labels)
 
             # Forward pass and calculate loss
-            output_batch = model(input_batch)
-            loss = loss_fn(output_batch, labels_batch)
+            outputs = model(inputs)
+            loss = loss_fn(outputs, labels)
 
             # Compute gradients and perform parameter updates
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-       
-            #if i % 100 == 0:
+            if scheduler != None:
+                scheduler.step()
+                
             # Move to cpu and convert to numpy
-            output_batch = output_batch.data.cpu().numpy()
-            labels_batch = labels_batch.data.cpu().numpy()
+            outputs = outputs.data.cpu().numpy()
+            labels = labels.data.cpu().numpy()
             
             # Compute batch metrics
-            r2 = r2_score(labels_batch, output_batch) 
+            r2 = r2_score(labels, outputs) 
             summary_batch = {'average r2': r2, 'average MSE loss': loss.item()}
             summaries.append(summary_batch)
-            
-            # Update the average loss
-            loss_sum += loss.item()
-            loss_steps += 1
-            
-            # loss = average loss over batch * num examples in batch 
-            #-- unsure if this is not being computed correctly; much higher than it should be compared
-            # to the version saved in mean_metrics
-            running_loss += loss.item() * input_batch.size(0)  
             
             # Display batch loss and r2
             loss_str = '{:05.3f}'.format(loss.item())
@@ -136,20 +129,16 @@ def train(model, optimizer, loss_fn, dataloader, batch_size):
             t.set_postfix(loss=loss_str, r2=r2_str) 
             t.update()
     
-    # Epoch loss
-    epoch_loss = running_loss / train_dataset_size
-    
+
     # Save metrics
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]} 
-    mean_metrics['epoch loss'] = epoch_loss
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
     print("Train metrics: {}".format(metrics_string))
-    print("Average train loss over epoch: {} ".format(epoch_loss))
 
     return mean_metrics
 
 
-def evaluate(model, loss_fn, dataloader, batch_size):
+def evaluate(model, loss_fn, dataloader, batch_size, epoch):
     '''
     Evaluates the model for 1 epoch on all batches in the dataloader.
     '''
@@ -157,9 +146,6 @@ def evaluate(model, loss_fn, dataloader, batch_size):
     model.eval()
    
     summaries = []
-    loss_sum = 0
-    loss_steps = 0
-    running_loss = 0
     num_batches = len(dataloader)
     val_dataset_size = num_batches * batch_size
     
@@ -168,37 +154,28 @@ def evaluate(model, loss_fn, dataloader, batch_size):
     with tqdm(total=num_batches) as t:
 
         with torch.no_grad():
-            for i, sample_batch in enumerate(dataloader):
+            for i, sample in enumerate(dataloader):
 
-                input_batch, labels_batch = sample_batch['image'], sample_batch['pm']
-                lat, lon, mon = sample_batch['lat'], sample_batch['lon'], sample_batch['month']
-                tmax, tmin, prec = sample_batch['tmax'], sample_batch['tmin'], sample_batch['prec']
-                features = torch.stack((lat, lon, mon, tmax, tmin, prec), dim=1)
-    
+                indices, inputs, labels = sample['index'], sample['image'], sample['label']
+
                 # Move to GPU if available       
-                input_batch = input_batch.to(model.device, dtype=torch.float)
-                labels_batch = labels_batch.to(model.device, dtype=torch.float)
-                features = features.to(model.device, dtype=torch.float)
+                inputs = inputs.to(model.device, dtype=torch.float)
+                labels = labels.to(model.device, dtype=torch.float)
 
                 # Convert to torch Variables
-                input_batch, labels_batch = Variable(input_batch), Variable(labels_batch)
-                features = Variable(features)
+                inputs = Variable(inputs)
+                labels = Variable(labels)
 
                 # Forward pass and calculate loss
-                output_batch = model(input_batch)
-                loss = loss_fn(output_batch, labels_batch)
+                outputs = model(inputs)
+                loss = loss_fn(outputs, labels)
 
                 # Move to cpu and convert to numpy
-                output_batch = output_batch.data.cpu().numpy()
-                labels_batch = labels_batch.data.cpu().numpy()
+                outputs = outputs.data.cpu().numpy()
+                labels = labels.data.cpu().numpy()
                 
-                # Update the average loss
-                loss_steps += 1
-                loss_sum += loss.item()
-                running_loss += loss.item() * input_batch.size(0)
-
                 # Save metrics
-                r2 = r2_score(labels_batch, output_batch) #.cpu().detach().numpy())
+                r2 = r2_score(labels, outputs) 
                 summary_batch = {'average r2': r2, 'average MSE loss': loss.item()}
                 summaries.append(summary_batch)
 
@@ -207,55 +184,44 @@ def evaluate(model, loss_fn, dataloader, batch_size):
                 r2_str = '{:01.3f}'.format(r2)
                 t.set_postfix(loss=loss_str, r2=r2_str) 
                 t.update()
-    
-    # Epoch loss
-    epoch_loss = running_loss / val_dataset_size
-   
+
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]}    
-    mean_metrics['epoch loss'] = epoch_loss
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
     print("Evaluation metrics: {}".format(metrics_string))
-    print("Average evaluation loss over epoch: {} ".format(epoch_loss))
     
     return mean_metrics
 
 
 def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataloader, 
-                       batch_size, num_epochs, saved_weights_file = None):
+                       batch_size, num_epochs, model_dir=None, saved_weights_file=None):
     '''
     Trains the model and evaluates at every epoch
     '''
-    
-    model_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt-cnn-new/"
-    saved_weights_file= None
-    # If a saved weights file for the model is specified, reload the weights
-    if saved_weights_file is not None:
-        saved_weights_path = os.path.join(model_dir, saved_weights_file + '.pth.tar')
-        print("Restoring parameters from {}".format(saved_weights_path))
-        utils.load_checkpoint(saved_weights_path, model, optimizer)
 
     best_val_r2 = 0.0
+    all_train_losses, all_val_losses, all_train_r2, all_val_r2 = [], [], [], []
     
-    all_train_losses = []
-    all_val_losses = []
-    all_train_r2 = []
-    all_val_r2 = []
+    # If a saved weights file for the model is specified, reload the weights
+    if model_dir is not None and saved_weights_file is not None:
+        saved_weights_path = os.path.join(model_dir, saved_weights_file + '.pth.tar')
+        utils.load_checkpoint(saved_weights_path, model, optimizer)
+        print("Restoring parameters from {}".format(saved_weights_path))
     
     for epoch in range(num_epochs):
         
         print("Running Epoch {}/{}".format(epoch, num_epochs))
               
         # Train on all batches
-        train_mean_metrics = train(model, optimizer, loss_fn, train_dataloader, batch_size)
+        train_mean_metrics = train(model, optimizer, loss_fn, train_dataloader, batch_size, epoch)
 
         # Evaluate on validation set
-        val_mean_metrics = evaluate(model, loss_fn, val_dataloader, batch_size)
+        val_mean_metrics = evaluate(model, loss_fn, val_dataloader, batch_size, epoch)
         
         # Save losses and r2 from this epoch
-        all_train_losses.append( train_mean_metrics['epoch loss'] )
-        all_val_losses.append( val_mean_metrics['epoch loss'] )
-        all_train_r2.append( train_mean_metrics['average r2'] )
-        all_val_r2.append( val_mean_metrics['average r2'] )
+        all_train_losses.append(train_mean_metrics['average MSE loss'])
+        all_val_losses.append(val_mean_metrics['average MSE loss'])
+        all_train_r2.append(train_mean_metrics['average r2'])
+        all_val_r2.append(val_mean_metrics['average r2'])
     
         val_r2 = val_mean_metrics['average r2']
         is_best = val_r2 > best_val_r2
@@ -267,16 +233,13 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
 
         # If best_eval, save to best_save_path
         if is_best:
-            print("Found new best R2 value")
             best_val_r2 = val_r2
+            print("Found new best R2 value of {}. Saving to checkpoint directory {}.".format(best_val_r2, model_dir))
 
             # Save best val metrics in a json file in the model directory
             best_json_path = os.path.join(model_dir, "metrics_val_best_weights_regression_unbal.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
 
-        # Save latest val metrics in a json file in the model directory
-        # last_json_path = os.path.join(model_dir, "metrics_val_last_weights_regression.json")
-        # utils.save_dict_to_json(val_mean_metrics, last_json_path)
     
     print("Train losses: {} ".format(all_train_losses))
     print("Val losses: {} ".format(all_val_losses))
@@ -299,16 +262,22 @@ if __name__ == "__main__":
     cleaned_csv = "data_csv_files/cleaned_data_all_temp_new_3.csv"
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
-
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=64, sample_balanced=True)
+    checkpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt_small_cnn/"
+    
+    lr = 0.0001
+    reg = 1e-4
+    batch_size = 64
+    num_epochs = 15 
+    
+    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, sample_balanced=True)
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = Small_CNN(device) 
+    model.apply(model.init_weights)
     model.to(device)
-    
-    optimizer = optim.Adam(model.parameters(), lr = 0.0005, weight_decay=1e-4) #0.0005
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'],
-                       batch_size=64, num_epochs=50)
-                       #,saved_weights_file="best_5_scratch") # in checkpt3 
+        
+    optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
+    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
+                       batch_size=batch_size, num_epochs=num_epochs, model_dir = checkpt_dir)     
                        
     
