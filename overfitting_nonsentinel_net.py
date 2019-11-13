@@ -58,7 +58,7 @@ class Small_Net(nn.Module):
         x_7 = F.leaky_relu(self.fc7(x_7_input))
         x = self.final(x_7)
        
-        return x
+        return x, x_7_output
 
 def normalize_train(X_train):
     means = X_train.mean(axis=0)
@@ -114,7 +114,7 @@ def train_small_net(X_train, X_val, y_train, y_val, under_fifty=True, learning_r
     
     train_acc = []
     val_acc = []
-    epochs = 610
+    epochs = 200
     for epoch in range(epochs):
         
         epoch_train_accs = np.zeros(num_batches)
