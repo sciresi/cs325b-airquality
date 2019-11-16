@@ -1,24 +1,21 @@
 import os
-import pandas
 import csv
+import time
+import pandas
+import random
 import numpy as np
+from tqdm import tqdm
 
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-
-from tqdm import tqdm
 from sklearn.metrics import r2_score
 #import matplotlib
 #matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-import sys
-sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
-sys.path.insert(0, '/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/DataVisualization')
 from dataloader import load_data, load_data_new
-from read_tiff import get_sentinel_img, get_sentinel_img_from_row, save_sentinel_from_eparow
 from pandarallel import pandarallel
 import utils
 
@@ -26,7 +23,7 @@ class CNN_combined(nn.Module):
     def __init__(self, device = "cpu"):
         super(CNN_combined, self).__init__()
 
-        in_channels = 13
+        in_channels = 13 #4
         out_channels1 = 64 #64
         out_channels2 = 128 #128
         out_channels3 = 256 #256
@@ -51,9 +48,9 @@ class CNN_combined(nn.Module):
         self.drop = nn.Dropout(p=0.2)
         
         # Feed forward portion
-        self.fffc1 = nn.Linear(num_ff_features, 100)
-        self.fffc2 = nn.Linear(100,100)
-        self.fffc3 = nn.Linear(100,100)
+        self.fffc1 = nn.Linear(num_ff_features, 500)
+        self.fffc2 = nn.Linear(500,500)
+        self.fffc3 = nn.Linear(500,100)
         self.dropfffc = nn.Dropout(p=0.2)
         
         # Recombined portion
@@ -100,6 +97,15 @@ class CNN_combined(nn.Module):
         
         return x
 
+    def _set_seeds(self, seed):
+        """ Sets the seeds of various libraries """
+        if self.device == "cuda:0":
+            torch.cuda.manual_seed(seed)
+        else:
+            torch.manual_seed(seed)
+        random.seed(seed)
+        np.random.seed(seed)
+
 def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=None):
     '''
     Trains the model for 1 epoch on all batches in the dataloader.
@@ -120,17 +126,12 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
         for i, sample in enumerate(dataloader):
             
             indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
-
+            
             # Move to GPU if available       
             inputs = inputs.to(model.device, dtype=torch.float)
             labels = labels.to(model.device, dtype=torch.float)
             features = features.to(model.device, dtype=torch.float)
 
-            # Convert to torch Variables
-            inputs = Variable(inputs)
-            labels = Variable(labels)
-            features = Variable(features)
-            
             # Forward pass and calculate loss
             outputs = model(inputs, features) 
             loss = loss_fn(outputs, labels)
@@ -162,6 +163,9 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             r2_str = '{:01.3f}'.format(r2)
             t.set_postfix(loss=loss_str, r2=r2_str) 
             t.update()
+            
+            del inputs, features, labels, outputs
+            torch.cuda.empty_cache()
   
     # Save metrics
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]} 
@@ -196,11 +200,6 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
                 labels = labels.to(model.device, dtype=torch.float)
                 features = features.to(model.device, dtype=torch.float)
 
-                # Convert to torch Variables
-                inputs = Variable(inputs)
-                labels = Variable(labels)
-                features = Variable(features)
-                
                 # Forward pass and calculate loss
                 outputs = model(inputs, features) 
                 loss = loss_fn(outputs, labels)
@@ -225,6 +224,9 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
                 r2_str = '{:01.3f}'.format(r2)
                 t.set_postfix(loss=loss_str, r2=r2_str) 
                 t.update()
+                
+                del inputs, features, labels, outputs
+                torch.cuda.empty_cache()
    
     mean_metrics = {metric: np.mean([x[metric] for x in summaries]) for metric in summaries[0]}    
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in mean_metrics.items())
@@ -234,7 +236,7 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
 
 
 def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataloader, 
-                       batch_size, num_epochs, model_dir=None, saved_weights_file=None):
+                       batch_size, num_epochs, num_train, model_dir=None, saved_weights_file=None):
     '''
     Trains the model and evaluates at every epoch
     '''
@@ -281,15 +283,19 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
             best_json_path = os.path.join(model_dir, "metrics_val_best_weights_regression_unbal.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
 
-
+        if epoch % 10 ==0:
+            print("Train losses: {} \n Validation losses: {}".format(all_train_losses, all_val_losses))
+            print("Train mean R2s: {} \n Validation mean R2s: {}".format(all_train_r2, all_val_r2))
+       
     # Print average losses and R2 over train and validation sets
     print("Train losses: {} \n Validation losses: {}".format(all_train_losses, all_val_losses))
     print("Train mean R2s: {} \n Validation mean R2s: {}".format(all_train_r2, all_val_r2))
         
     # Plot losses and R2 over train and validation sets   
-    num_ex = 20
-    utils.plot_losses(all_train_losses, all_val_losses, num_epochs, num_ex, save_as="plots/loss_mmm_20000ex_unb.png")
-    utils.plot_r2(all_train_r2, all_val_r2, num_epochs, num_ex, save_as="plots/r2_mmm_20000ex_unb.png")
+    utils.plot_losses(all_train_losses, all_val_losses, num_epochs, num_train, 
+                      save_as="plots/loss_"+str(num_train)+"ex_unb.png")
+    utils.plot_r2(all_train_r2, all_val_r2, num_epochs, num_train, 
+                  save_as="plots/r2_"+str(num_train)+"ex_unb.png")
                     
     # Return train and eval metrics
     return train_mean_metrics, val_mean_metrics
@@ -320,33 +326,47 @@ if __name__ == "__main__":
     
     #cleaned_csv = "data_csv_files/cleaned_data_all_temp_new_3.csv"
     cleaned_csv = "data_csv_files/master_csv_with_averages.csv"
+    train_csv = "mini_train_sites_15000_2016.csv"
+    val_csv = "mini_val_sites_5000_2016.csv"
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
-    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpoint_monthly/"
+    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/new_checkpoint/"
     
-    lr = 0.00003 # 0.00001
+    lr = 0.00001 #0.00003 # 0.00001
     reg = 1e-4
-    batch_size = 64
-    num_epochs = 15 
+    batch_size = 90
+    num_epochs = 100
+    num_train = 15000
    
-    print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
+    print("Training model for {} epochs with batch size = {}, lr = {}, reg = {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
    
-    dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, sample_balanced=True, predict_monthly=True)
-    #dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, predict_monthly=True)
+    #dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, sample_balanced=True, predict_monthly=True)
+    # old #dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, predict_monthly=True)
 
-    #dataloaders = load_data_new(cleaned_csv, batch_size = batch_size, train_images=npy_dir, 
-    #                            split_train_test=0.996, split_train_val=0.002,sample_balanced=True)    
+    dataloaders = load_data_new(train_csv, batch_size = batch_size, num_workers=8,
+                                predict_monthly=True, train_images=npy_dir,
+                                val_images=npy_dir, val_nonimage_csv=val_csv)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = CNN_combined(device) 
-    model.apply(model.init_weights)
+    model = CNN_combined(device)
     model.to(device)
-   
+    model._set_seeds(0)
+    model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
-                       batch_size=batch_size, num_epochs=num_epochs, model_dir = chckpt_dir
-                       , saved_weights_file="last_6")
+    
+    start_time = time.time()
     '''
+    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
+                       batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
+                       model_dir = chckpt_dir) 
+    
     predict(model, nn.MSELoss(), dataloaders['val'], batch_size, num_epochs, 
             dataset='val', model_dir=chckpt_dir, saved_weights_file="all_time_best_monthly")
     '''
+  
+    print("done")
+    print("--- %s seconds ---" % (time.time() - start_time))
+
+    preds = "predictions/cnn_val_preds_epoch_0.csv"
+    utils.compute_pm_month_average_post(preds, cleaned_csv)
+    

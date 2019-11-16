@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn as nn
 from sklearn.metrics import r2_score
+from pandarallel import pandarallel 
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -252,6 +253,7 @@ def load_sentinel_dates(metadata_folder_path):
     return file_to_dates_map
 
 def clean_df(df):
+
     # TODO: add more filtering? change how we replace nans?
     df = df[df['TMAX'].notnull()]
     df = df[df['TMIN'].notnull()]
@@ -264,8 +266,7 @@ def clean_df(df):
     df = df[df['SENTINEL_INDEX'].notnull()]
     
     # Fix indexing
-    df = df.rename(columns={'Unnamed: 0': 'Index'}) # probably remove, wrong col
-    df = df.drop(['Unnamed: 0.1', 'Unnamed: 0.1.1', 'Unnamed: 0.1.1.1'], axis=1)
+    df = df.rename(columns={'Unnamed: 0': 'Index'}) 
     
     return df
 
@@ -422,7 +423,8 @@ def load_checkpoint(checkpoint, model, optimizer=None):
         optimizer: (torch.optim) optional: resume optimizer from checkpoint
     '''
     if not os.path.exists(checkpoint):
-        raise("File doesn't exist {}".format(checkpoint))
+        print("File doesn't exist {}".format(checkpoint))
+        return 
     checkpoint = torch.load(checkpoint)
     model.load_state_dict(checkpoint['state_dict'])
 
@@ -548,7 +550,7 @@ def plot_weights(model, layer_num, single_channel = True, collated = False):
         print("Can only visualize layers which are convolutional")
 
         
-def save_predictions(indices, predictions, labels, batch_size, save_to):
+def save_predictions(indices, predictions, labels, sites, dates, batch_size, save_to):
     '''
     Method to save indices, labels, and predictions of a given batch. 
     All batches over entire epoch will be saved to the same file,
@@ -561,14 +563,16 @@ def save_predictions(indices, predictions, labels, batch_size, save_to):
             index = indices[i]
             y_pred = predictions[i]
             y_true = labels[i]
-            row = [index, y_pred, y_true]
+            site = sites[i]
+            date = dates[i]
+            row = [index, y_pred, y_true, site, date]
             writer.writerow(row)
 
 def mse_row(row):
     '''                                                                                                                                                                                                     
-    Given a row of a df which is an example of the                                                                                                                                                          
-    form (index, prediction, label),                                                                                                                                                                        
-    computes the MSE of the example.                                                                                                                                                                        
+    Given a row of a df which is an example of the
+    form (index, prediction, label),
+    computes the MSE of the example.
     '''
     pred = row['Prediction']
     label = row['Label']
@@ -634,13 +638,161 @@ def plot_loss_histogram(predictions_csv):
     print(sorted_above_three)
     
     
-def load_prism_data():
-    base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/PRISM_weather/extracted_weather_data/"
-    prism_2016_ppt = base_dir+ "PRISM_ppt_stable_4kmD2_2016.csv"
-    prism_2016_tdmean = base_dir+ "PRISM_tdmean_stable_4kmD1_2016.csv"
-    prism_2016_tmean = base_dir+ "PRISM_tmean_stable_4kmD1_2016.csv"
+def get_month(row):
+    date = pd.to_datetime(row['Date'])
+    month = date.month
+    return month
 
-    ppt_df = pd.read_csv(prism_2016_ppt)
-    print(ppt_df.columns)
-    return ppt_df
+
+def resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv="averages.csv"):
+    '''                                                                                                        
+    Helper function to take  given predictions file/df and gather Site ID                       
+    and month information for all datapoints in the file. Saves new .csv with these                            
+    columns added and returns the df. To be used in computing monthly averages                                \
+                                                                                                               
+    from daily PM predictions.                                                                                 
+    '''
+    new_pred_csv = "new_preds.csv"
+    master_df = pd.read_csv(master_csv)
+    pred_df = pd.read_csv(predictions_csv)
+
+    new_pred_df = pd.DataFrame(columns=['Index', 'Prediction', 'Label', 'Month' ,'Site ID'])
+    pred_df= pred_df.head(100) ## REMOVE ##                                                                    
+    indices = pred_df['Index']
+    for index in indices:
+        pred_row = pred_df[pred_df['Index']==index]
+        epa_row = master_df.loc[index]
+        month = get_month(epa_row)
+        site = epa_row['Site ID']
+        pred_row['Month'] = month
+        pred_row['Site ID'] = site
+        new_pred_df = new_pred_df.append(pred_row)
+
+    # Save new predictions file                                                                                
+    new_pred_df.to_csv(new_pred_csv)
+
+    return new_pred_df
+
+
+def compute_pm_month_average_post(predictions_csv, master_csv, averages_csv="averages.csv"):
+    '''                                                                                                        
+    Computes PM monthly averages from daily predictions (after training). To be                                
+    used when predicting daily average, then aggregating monthly after training.    
     
+    Saves new predicted averages to separate .csv. Then reads from both averages.csv
+    and predicted_averages.csv, joins the two df, and saves final df with both 
+    true and predicted averages.
+    '''
+    predicted_avgs_csv = "predicted_avgs_csv.csv"
+    predicted_and_true_avgs_csv = "predicted_and_true_avgs_csv.csv"
+
+    master_df = pd.read_csv(master_csv)
+    averages_df = pd.read_csv(averages_csv)
+    new_pred_df = resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv)
+
+    epa_stations = new_pred_df['Site ID'].unique()
+
+    with open(predicted_avgs_csv, 'a') as fd:
+        writer = csv.writer(fd)
+        writer.writerow(["Site ID", "Month", "Predicted Month Average"])
+
+        for i, station_id in enumerate(epa_stations):
+            station_datapoints = new_pred_df[new_pred_df['Site ID'] == station_id]
+
+            for month in range(1,13):
+
+                month_m_at_station_i = station_datapoints[station_datapoints['Month'] == month]
+                if len(month_m_at_station_i) == 0:
+                    continue
+                pm_preds_for_month_m_at_station_i = month_m_at_station_i['Prediction']
+                month_average_pred = np.mean(pm_preds_for_month_m_at_station_i)
+                row = [station_id, month, month_average_pred]
+                writer.writerow(row)
+
+    # Now read from new averages file and merge with old                                                       
+    average_df = pd.read_csv(averages_csv)
+    average_df = average_df.set_index(["Site ID", "Month"])
+    predicted_average_df = pd.read_csv(predicted_avgs_csv)
+    predicted_average_df = predicted_average_df.set_index(["Site ID", "Month"])
+    combined = pd.concat([average_df, predicted_average_df], axis=1)
+    combined.to_csv(predicted_and_true_avgs_csv)
+
+    
+def compute_pm_month_average_pre(master_csv, averages_csv="averages.csv"):
+    '''
+    Computes PM monthly averages prior to training and adds to master sheet.
+    To be used when trying to directly predict monthly average.
+    '''
+    
+    pandarallel.initialize()
+
+    df = pd.read_csv(master_csv)
+
+    # Index on 'Month' and 'Site Id' to compute averages at each station for the month                                           
+    months = df.parallel_apply(get_month, axis=1)
+    df['Month'] = months
+
+    epa_stations = df['Site ID'].unique()
+    num_sites = len(epa_stations)
+
+    with open(averages_csv, 'a') as fd:
+        writer = csv.writer(fd)
+        writer.writerow(["Site ID", "Month", "Month Average"])
+        for i, station_id in enumerate(epa_stations):
+            if i%100 == 0:
+                print("Getting monthly averages for site {}/{}".format(i, num_sites))
+
+            station_datapoints = df[df['Site ID'] == station_id]
+
+            for month in range(1,13):
+
+                month_m_at_station_i = station_datapoints[station_datapoints['Month'] == month]
+                pms_for_month_m_at_station_i = month_m_at_station_i['Daily Mean PM2.5 Concentration']
+                month_average = np.mean(pms_for_month_m_at_station_i)
+                row = [station_id, month, month_average]
+                writer.writerow(row)
+
+def get_month_average(epa_row):
+    averages_csv = "averages.csv"
+    average_df = pd.read_csv(averages_csv)
+
+    # from epa row get month and station id of datapoint                                                                         
+    date = pd.to_datetime(epa_row['Date'])
+    month = date.month
+    station = epa_row['Site ID']
+
+    # look up in averages file the corresponding average                                                                         
+    average_row = average_df[(average_df['Site ID'] == station) & (average_df['Month'] == month)]
+    average = average_row['Month Average']
+
+    return average
+
+
+def add_pm_month_average(master_csv):
+
+    pandarallel.initialize()
+
+    averages_csv = "averages.csv"
+
+    master_df = pd.read_csv(master_csv)
+    months = master_df.parallel_apply(get_month, axis=1)
+    master_df['Month'] = months
+
+    average_df = pd.read_csv(averages_csv)
+    average_df = average_df.set_index(["Site ID", "Month"])
+
+    combined = master_df.join(average_df, on=["Site ID", "Month"], how='left')
+  
+    save_to = "master_csv_with_averages.csv"
+    combined.to_csv(save_to)
+
+
+
+def average_analysis(averages_csv):
+
+    average_df = pd.read_csv(averages_csv)
+    for month in range(1, 13):
+        month_df = average_df[average_df['Month']== month]
+        pms = month_df['Month Average']
+        mean_avg_pm_allsites = np.mean(pms)
+        print("Month {} mean average over all sites: {}".format(month, mean_avg_pm_allsites))

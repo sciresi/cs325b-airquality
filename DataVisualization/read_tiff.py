@@ -1,14 +1,15 @@
 import csv
 import argparse
 import time
+'''
 try:
     import gdal
 except ModuleNotFoundError:
     from osgeo import gdal
-
+'''
 import numpy as np
-import rasterio
-from rasterio.plot import show
+#import rasterio
+#from rasterio.plot import show
 import matplotlib.pyplot as plt
 from os import listdir
 from os.path import isfile, join, exists

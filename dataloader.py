@@ -19,14 +19,21 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        tensors = {"index": sample["index"],
+        tensors = {"index": sample["index"], "month": sample["month"], "site": sample["site"],
                    "non_image" : torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float),
                    "label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
         #tensors = {"label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
         
         if "image" in sample:
-            # Swap channel axis
+            # Swap channel axis from H x W x C  to  C x H x W
             image = sample["image"].transpose((2, 0, 1))
+            
+            # Remove bands?  keep 0-3, 9-11
+            first_4_bands = image[:4] 
+            last_3_bands = image[9:12]
+            image = np.concatenate((first_4_bands, last_3_bands), axis=0)
+            
+            #
             tensors["image"] = torch.from_numpy(np.asarray(image)).to(dtype=torch.float)
 
         if "non_image" in sample:
@@ -90,7 +97,7 @@ class CombinedDataset(Dataset):
         An instance of a CombinedDataset.
         """
         self.epa_df = pd.read_csv(master_csv_file)
-        self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
+        #self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
         self.image_dir = image_dir
         self.transform = transforms.Compose([ToTensor()])
         self.classify = classify
@@ -110,8 +117,9 @@ class CombinedDataset(Dataset):
             self.epa_df = pd.concat([above_12_df, below_12_df], ignore_index=True)
             self.epa_df = self.epa_df.sample(frac=1)
             
-        self.epa_df = utils.clean_df(self.epa_df)
-
+        #self.epa_df = utils.clean_df(self.epa_df) no more cleaning needed, just change index
+        #self.epa_df = self.epa_df.rename(columns={'Unnamed: 0': 'Index'}) 
+        self.epa_df = self.epa_df.drop(['Unnamed: 0'], axis=1)
         
     def __len__(self):
         return len(self.epa_df)
@@ -123,6 +131,13 @@ class CombinedDataset(Dataset):
         sample = {}
         epa_row = self.epa_df.iloc[idx]
         sample["index"] = self.epa_df.index[idx]
+           
+        # Added     
+        date = pd.to_datetime(epa_row['Date'])
+        sample["month"] = date.month
+        sample["site"] = epa_row['Site ID']
+        #
+
         sample["non_image"], _ = utils.get_epa_features_no_snow(epa_row)
         if self.image_dir:
             tif_filename = str(epa_row["SENTINEL_FILENAME"])
@@ -319,7 +334,7 @@ def get_sampler(dataset_size, train_end, proportion):
     return SubsetRandomSampler(np.arange(sampler_start, sampler_end))
 
 def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0, 
-              sample_balanced=False, **kwargs):
+              sample_balanced=False, predict_monthly=False, **kwargs):
     """
     Reads in training, val, and test data as specified by the provided dict. 
     Returns a dictionary of torch.util.data.DataLoaders for train and
@@ -379,7 +394,8 @@ def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0,
         * "test" (optional) : DataLoader for testing data
     """
     print("Using {} workers to load data...".format(num_workers))
-    train_dataset = CombinedDataset(train_nonimage_csv, kwargs.get("train_images"), sample_balanced=sample_balanced)
+    train_dataset = CombinedDataset(train_nonimage_csv, kwargs.get("train_images"), sample_balanced=sample_balanced,
+                                   predict_monthly=predict_monthly)
     train_end = len(train_dataset)
     if kwargs.get("test_nonimage_csv"):
         test_dataset = CombinedDataset(kwargs["test_nonimage_csv"], kwargs.get("test_images"))
@@ -396,7 +412,7 @@ def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0,
         test_dataloader = None
         
     if kwargs.get("val_nonimage_csv"):
-        val_dataset = CombinedDataset(kwargs["val_nonimage_csv"], kwargs.get(val_images))
+        val_dataset = CombinedDataset(kwargs["val_nonimage_csv"], kwargs.get("val_images"), predict_monthly=predict_monthly)
         print("{} entries in validation set".format(len(val_dataset)))
         val_dataloader = DataLoader(val_dataset, batch_size=batch_size, 
                                     num_workers = num_workers, shuffle=True)
@@ -465,8 +481,8 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False,
     val_sampler = SubsetRandomSampler(val_indices)
     test_sampler = SubsetRandomSampler(test_indices)
     
-    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=4)
-    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=2)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=8)
+    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=8)
     test_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
 
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
@@ -493,6 +509,46 @@ def show_samples(dataset, num_samples):
             break
 
 
+def split_data_by_site(master_csv):
+    '''
+    Original function to split the 2016 data by site.
+    Given the master csv file of all datapoints (for a given year), does the initial
+    split of sites into train, val, and test.
+    Saves that years data into train_site_data, val_site_data, and test_site_data
+    master csv files.
+    
+    For future years data, will use same site split- so need to edit as appropriate.
+
+    '''
+    all_data = pd.read_csv(master_csv)
+    all_data = utils.clean_df(all_data)
+    epa_stations = all_data['Site ID'].unique()
+    epa_stations = epa_stations.tolist()
+    num_sites = len(epa_stations)  # used to compute indices for 60/20/20 split 
+    '''
+    random.shuffle(epa_stations)
+    train_sites = epa_stations[:690]
+    val_sites = epa_stations[690:920]
+    test_sites = epa_stations[920:]
+    '''
+    ## in future, instead of above, change to split 
+    ##based on .unique 'Site ID' rows from train_site_2016, etc.
+    ## e.g.:
+    #       train_data_2016 = pd.read_csv("train_sites_master_csv_2016.csv" 
+    #       train_sites = train_data_2016['Site ID'].unique().tolist()
+    #       train_data_2017 = all_data_2017[all_data_2017['Site ID'].isin(train_sites)]
+    #       train_data_2017.to_csv("train_sites_master_csv_2017.csv")
+    
+    train_data = all_data[all_data['Site ID'].isin(train_sites)]
+    val_data = all_data[all_data['Site ID'].isin(val_sites)]
+    test_data = all_data[all_data['Site ID'].isin(test_sites)]
+    
+    train_data.to_csv("train_sites_master_csv_2016.csv")
+    val_data.to_csv("val_sites_master_csv_2016.csv")
+    test_data.to_csv("test_sites_master_csv_2016.csv")
+    
+    
+    
 #detach, move to cpu, call numpy, numpy.save(path, array)
 #simultaneously save outputs
 #embedding dataset which reads the numpy arrays at initialization
