@@ -72,3 +72,7 @@ class SmallFF(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x.squeeze(-1)
+    
+class CombinedModel(nn.Module):
+    def __init__(self, non_image_model, image_model):
+        

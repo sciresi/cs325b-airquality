@@ -6,6 +6,12 @@ import utils
 from DataVisualization import read_tiff
 from concurrent.futures import ThreadPoolExecutor
 
+HOME_FOLDER = os.path.expanduser("~")
+DATA_FOLDER = "es262-airquality"
+EPA_DATA_FOLDER = os.path.join(HOME_FOLDER, DATA_FOLDER, "epa")
+SENTINEL_FOLDER = os.path.join(HOME_FOLDER, DATA_FOLDER, "sentinel")
+SENTINEL_METADATA_FOLDER = os.path.join(SENTINEL_FOLDER, "Metadata")
+
 SENTINEL_CROP_SIZE = 200
 
 def save_sentinel_tif_to_npy(tif_file_path):
@@ -44,15 +50,15 @@ def save_sentinel_npy(folder_path, num_threads=1):
 	num_threads : int, optional
 		Number of threads to use for the job.
 	"""
-	executor = ThreadPoolExecutor(max_workers=num_threads)
-	for filename in os.listdir(folder_path):
-		if not filename.startswith("s2"):
-			continue
-		file_extension = os.path.splitext(filename)[1]
-		if file_extension != ".tif":
-			continue
-		file_path = os.path.join(folder_path, filename)
-		executor.submit(save_sentinel_tif_to_npy, file_path)
+	with ThreadPoolExecutor(max_workers=num_threads) as executor:
+		for filename in os.listdir(folder_path):
+			if not filename.startswith("s2"):
+				continue
+			file_extension = os.path.splitext(filename)[1]
+			if file_extension != ".tif":
+				continue
+			file_path = os.path.join(folder_path, filename)
+			executor.submit(save_sentinel_tif_to_npy, file_path)
 
 def save_all_sentinel_npy(sentinel_folder_path, num_folder_threads=1,
 						  num_saving_threads=1):
@@ -69,9 +75,11 @@ def save_all_sentinel_npy(sentinel_folder_path, num_folder_threads=1,
 	num_saving_threads : int
 		Number of threads to use in each folder for saving .tif files.
 	"""
-	executor = ThreadPoolExecutor(max_workers=num_folder_threads)
-	for directory in utils.get_directory_paths(sentinel_folder_path):
-		executor.submit(save_sentinel_npy, directory, num_saving_threads)
+	with ThreadPoolExecutor(max_workers=num_folder_threads) as executor:
+		for directory in utils.get_directory_paths(sentinel_folder_path):
+			if directory.endswith("2018") or directory.endswith("Metadata"):
+				continue
+			executor.submit(save_sentinel_npy, directory, num_saving_threads)
 
 def rename_sentinel_files(folder_path):
 	"""
@@ -213,7 +221,7 @@ def find_closest_sentinel_index(epa_date, sentinel_dates):
 	return closest_index
 
 
-def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path
+def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path,
 					  sentinel_dates):
 	"""
 	Takes a row of a pandas.DataFrame storing an EPA measurement and adds the
@@ -282,3 +290,15 @@ def load_sentinel_dates(metadata_folder_path):
 		dates = get_sentinel_dates(metadata_file_path)
 		file_to_dates_map[file_base] = dates
 	return file_to_dates_map
+
+def main():
+	print("Will look for EPA data in ", EPA_DATA_FOLDER)
+	print("Will look for Sentinel data in ", SENTINEL_FOLDER)
+	print("Renaming Sentinel files...")
+	rename_all_sentinel_files(SENTINEL_FOLDER)
+	print("Saving all Sentinel .tif files to .npy...")
+	save_all_sentinel_npy(SENTINEL_FOLDER, num_folder_threads=2, num_saving_threads=8)
+	
+
+if __name__ == "__main__":
+	main()

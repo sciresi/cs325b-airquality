@@ -29,7 +29,7 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 
 from utils import read_yaml
-from dataloader import load_data
+from dataloader import load_data_new
 from pdb import set_trace
 
 def log(string, log_file = None):
@@ -152,7 +152,7 @@ def train(args, yaml_data):
     make_results_folder(yaml_data["results_folder"])
     model = load_model(yaml_data)
 
-    dataloaders = load_data(**yaml_data)
+    dataloaders = load_data_new(**yaml_data)
     train_dataloader = dataloaders["train"]
     val_dataloader = dataloaders.get("val")
     

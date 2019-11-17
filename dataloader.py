@@ -451,12 +451,14 @@ def compute_dataloader_mean_std(dataloader):
         for key in batch.keys():
             if key == "label" or key == "output": # no need to normalize output
                 continue
+            elif key not in moments:
+                moments[key] = {}
             data = batch[key]
             num_dims = data.size(1) # channels for images, features for non_images
             first = moments[key].get("first", torch.empty(num_dims))
-            second = normalizations[key].get("second", torch.empty(num_dims))
+            second = moments[key].get("second", torch.empty(num_dims))
             data_count = np.prod((data.size()[0], *data.size()[2:])) # total elements to sum
-            total_count = counts.key(key, 0) # total elements we've seen so far
+            total_count = counts.get(key, 0) # total elements we've seen so far
             
             axes = [0, *range(2, len(data.size()))] # sum over all but axis = 1
             data_sum = data.sum(axes)
