@@ -459,7 +459,7 @@ def compute_dataloader_mean_std(dataloader):
             second = moments[key].get("second", torch.empty(num_dims))
             data_count = np.prod((data.size()[0], *data.size()[2:])) # total elements to sum
             total_count = counts.get(key, 0) # total elements we've seen so far
-            
+
             axes = [0, *range(2, len(data.size()))] # sum over all but axis = 1
             data_sum = data.sum(axes)
             data_ss = data.pow(2).sum(axes)
