@@ -12,6 +12,8 @@ import seaborn as sns
 import torch.nn as nn
 from sklearn.metrics import r2_score
 from pandarallel import pandarallel 
+from scipy.stats.stats import pearsonr
+
 
 def load_csv_dfs(folder_path, blacklist = []):
     """
@@ -435,6 +437,9 @@ def load_checkpoint(checkpoint, model, optimizer=None):
 
 
 def plot_losses(train_losses, val_losses, num_epochs, num_ex, save_as):
+    '''
+    Method to plot train and validation losses over num_epochs epochs.
+    '''
     plt.clf()
     plt.plot(range(0, num_epochs), train_losses, label='train')
     plt.plot(range(0, num_epochs), val_losses, label='val')
@@ -447,6 +452,9 @@ def plot_losses(train_losses, val_losses, num_epochs, num_ex, save_as):
     plt.savefig(save_as)
                                             
 def plot_r2(train_r2, val_r2, num_epochs, num_ex, save_as):
+    '''
+    Method to plot train and validation r2 values over num_epochs epochs.
+    '''
     plt.clf()
     plt.plot(range(0, num_epochs), train_r2, label = 'train')
     plt.plot(range(0, num_epochs), val_r2, label = 'val')
@@ -458,97 +466,6 @@ def plot_r2(train_r2, val_r2, num_epochs, num_ex, save_as):
     plt.show()
     plt.savefig(save_as)
     
-
-def plot_filters_single_channel(t):
-    
-    #kernels depth * number of kernels
-    nplots = t.shape[0]*t.shape[1]
-    ncols = 12
-    
-    nrows = 1 + nplots//ncols
-    #convert tensor to numpy image
-    t = t.data.cpu().numpy()
-    npimg = np.array(t, np.float32)
-    
-    count = 0
-    fig = plt.figure(figsize=(ncols, nrows))
-    
-    #looping through all the kernels in each channel
-    for i in range(t.shape[0]):
-        for j in range(t.shape[1]):
-            count += 1
-            ax1 = fig.add_subplot(nrows, ncols, count)
-            npimg = np.array(t[i, j], np.float32)
-            npimg = (npimg - np.mean(npimg)) / np.std(npimg)
-            npimg = np.minimum(1, np.maximum(0, (npimg + 0.5)))
-            ax1.imshow(npimg)
-            ax1.set_title(str(i) + ',' + str(j))
-            ax1.axis('off')
-            ax1.set_xticklabels([])
-            ax1.set_yticklabels([])
-   
-    plt.tight_layout()
-    plt.show()
-    plt.savefig("image.png")
-    
-    
-    
-def plot_filters_multi_channel(t):
-    
-    #get the number of kernals
-    num_kernels = t.shape[0]    
-    
-    #define number of columns for subplots
-    num_cols = 12
-    #rows = num of kernels
-    num_rows = num_kernels
-    
-    #set the figure size
-    fig = plt.figure(figsize=(num_cols,num_rows))
-    
-    #looping through all the kernels
-    for i in range(t.shape[0]):
-        ax1 = fig.add_subplot(num_rows,num_cols,i+1)
-        
-        #for each kernel, we convert the tensor to numpy 
-        npimg = np.array(t[i].numpy(), np.float32)
-        #standardize the numpy image
-        npimg = (npimg - np.mean(npimg)) / np.std(npimg)
-        npimg = np.minimum(1, np.maximum(0, (npimg + 0.5)))
-        npimg = npimg.transpose((1, 2, 0))
-        ax1.imshow(npimg)
-        ax1.axis('off')
-        ax1.set_title(str(i))
-        ax1.set_xticklabels([])
-        ax1.set_yticklabels([])
-        
-    plt.savefig('myimage.png', dpi=100)    
-    plt.tight_layout()
-    plt.show()
-    plt.savefig("image2.png")
-    
-    
-def plot_weights(model, layer_num, single_channel = True, collated = False):
-    #extracting the model features at the particular layer number
-    layer = model.conv1
-    
-    #checking whether the layer is convolution layer or not 
-    if isinstance(layer, nn.Conv2d):
-        #getting the weight tensor data
-        weight_tensor = layer.weight.data
-        if single_channel:
-            if collated:
-                plot_filters_single_channel_big(weight_tensor)
-            else:
-                plot_filters_single_channel(weight_tensor)
-        else:
-            if weight_tensor.shape[1] == 3:
-                plot_filters_multi_channel(weight_tensor)
-            else:
-                print("Can only plot weights with three channels with single channel = False")
-    else:
-        print("Can only visualize layers which are convolutional")
-
         
 def save_predictions(indices, predictions, labels, sites, dates, batch_size, save_to):
     '''
@@ -558,7 +475,6 @@ def save_predictions(indices, predictions, labels, sites, dates, batch_size, sav
     '''
     with open(save_to, 'a') as fd:
         writer = csv.writer(fd)
-        #writer.writerow(["Index", "Prediction", "Label"])
         for i in range(0, batch_size):
             index = indices[i]
             y_pred = predictions[i]
@@ -592,7 +508,22 @@ def compute_r2(predictions_csv):
     labels = df['Label']
     
     r2 = r2_score(labels, predictions)
-    return r2
+    pearson = pearsonr(labels, predictions)
+    return r2, pearson 
+    
+def compute_r2_monthly(predictions_csv):
+    '''                                                 
+    Takes in .csv created from save_predictions of (indices, predictions, labels)
+    for each example, and calculates total R2 over the dataset.
+    '''
+    df = fix_month_avg_preds_file(predictions_csv)
+    
+    predictions = df['Month Average']
+    labels = df['Predicted Month Average']
+    
+    r2 = r2_score(labels, predictions)
+    pearson = pearsonr(labels, predictions)
+    return r2, pearson     
     
 def plot_loss_histogram(predictions_csv):
     '''                                                 
@@ -630,7 +561,7 @@ def plot_loss_histogram(predictions_csv):
     plt.axvline(stdev3, color='k', linestyle='dashed', linewidth=1)
     plt.text(stdev3*1.1, max_ylim*0.5, 'Mean+3std = {:.2f}'.format(stdev3), fontsize=10)
 
-    plt.savefig("loss-hist.png")
+    plt.savefig("plots/loss_hist.png")
     plt.show() 
     
     above_three_stdv = df[df['MSE']>stdev3]
@@ -648,8 +579,7 @@ def resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv="
     '''                                                                                                        
     Helper function to take  given predictions file/df and gather Site ID                       
     and month information for all datapoints in the file. Saves new .csv with these                            
-    columns added and returns the df. To be used in computing monthly averages                                \
-                                                                                                               
+    columns added and returns the df. To be used in computing monthly averages                              
     from daily PM predictions.                                                                                 
     '''
     new_pred_csv = "new_preds.csv"
@@ -752,6 +682,17 @@ def compute_pm_month_average_pre(master_csv, averages_csv="averages.csv"):
                 row = [station_id, month, month_average]
                 writer.writerow(row)
 
+                
+def fix_month_avg_preds_file(preds_true_file):
+    '''
+    Removes all null entries in the merged monthly averages file.
+    '''
+    df = pd.read_csv(preds_true_file)
+    df = df[df['Month Average'].notnull()]
+    df = df[df['Predicted Month Average'].notnull()]
+    return df
+    
+    
 def get_month_average(epa_row):
     averages_csv = "averages.csv"
     average_df = pd.read_csv(averages_csv)
@@ -796,3 +737,104 @@ def average_analysis(averages_csv):
         pms = month_df['Month Average']
         mean_avg_pm_allsites = np.mean(pms)
         print("Month {} mean average over all sites: {}".format(month, mean_avg_pm_allsites))
+
+        
+def plot_predictions(predictions_csv):
+    '''
+    Method to plot true PM2.5 values vs. model predicted values based on predictions in
+    the predictions_csv file.
+    '''
+    df = pd.read_csv(predictions_csv)
+    
+    indices = df['Index']
+    predictions = df['Prediction']
+    labels = df['Label']
+   
+    plt.scatter(labels, predictions, s=1)
+    plt.xlabel("Real PM2.5 Values (μg/$m^3$')")
+    plt.ylabel("Model PM2.5 Predictions (μg/$m^3$')")
+    plt.axis([-10, 25, -10, 25])
+    plt.title("True PM2.5 Values versus Model PM2.5 Predictions")
+    plt.savefig("plots/true_vs_preds_new.png")
+    plt.show()
+
+    
+def plot_predictions_histogram(predictions_csv, dataset='val'):
+    '''                                                 
+    Takes in .csv created from save_predictions of (indices, predictions, labels)
+    for each example. Then plots the histogram of the predictions vs. the labels.  
+    '''
+    plt.clf()
+    df = pd.read_csv(predictions_csv)
+    predictions = df['Prediction']
+    labels = df['Label']
+    bins = 75
+   
+    #plt.axis([0, 200, -10, 300]) # really should be number of examples                                                                                                                                        
+    plt.hist(predictions, bins, alpha=.9,label = dataset+'Predictions')
+    plt.hist(labels, bins, alpha=.9,label = dataset+'Labels')
+    plt.legend()
+    plt.savefig("plots/"+dataset+"_predictions_hist.png")
+    plt.show()
+
+    
+    
+def highest_loss_analysis(predictions_csv):
+    '''                                                 
+    Takes in .csv created from save_predictions of (indices, predictions, labels, site id, month),
+    for each example, and calculates MSE of each example.     
+    Then determines examples with highest losses, and looks for trends. 
+    '''
+    pandarallel.initialize()
+
+    df = pd.read_csv(predictions_csv)
+    mses = df.parallel_apply(mse_row, axis=1)
+    df['MSE'] = mses
+
+    # Compute mean and stdev of MSEs
+    mean_mse = np.mean(mses)
+    stddev_mse = np.std(mses)
+
+    stdev1 = mean_mse + stddev_mse
+    stdev2 = stdev1 + stddev_mse
+    stdev3 = stdev2 + stddev_mse
+    
+    # Determine outliers based on loss - defined as examples > 3 std. away from mean
+    above_two_stdv = df[df['MSE']>stdev2]
+    above_three_stdv = df[df['MSE']>stdev3]
+    sorted_above_three = above_three_stdv.sort_values(by=['Index'])
+    
+    category = 'Site ID' # or Month
+    category_outliers = above_three_stdv[category]
+    unique_values = pd.unique(category_outliers)   #i.e. unique sites / unique months
+    num_unique = len(unique_values)
+
+    plt.hist(sites, num_unique, alpha=.9,label = 'Highest Loss examples by '+ category)
+    plt.title('Highest Loss examples by '+ category ,fontname="Georgia", fontsize=16)
+    plt.xlabel(category, fontname="Times New Roman", fontsize=12)
+    plt.ylabel('Frequency',fontname="Times New Roman", fontsize=12)
+    plt.savefig("plots/highest_losses_by_" + category + ".png")
+    plt.show()
+    
+    n = 5 # Top 5 most fq sites most informative; 4 most fq months most informative
+    most_fq_in_category = category_outliers.value_counts()[:n].index.tolist()  # Top 5 most fq sites most informative
+    print(most_fq_in_category)
+    print(category_outliers.mode()) # or for just one top-most frequent     
+
+    
+def get_outlier_info(master_csv):
+    '''
+    Look up information of an outlier found from highest_loss_analysis function
+    '''
+    
+    site_id = 60371201 # CA
+    df = pd.read_csv(master_csv)
+
+    site_points = df[df['Site ID'] == site_id]
+    twenty = site_points.head(20)                                                             
+    most_fq_months = site_points['Month'].value_counts()[:12].index.tolist()
+
+    preds_csv = "/Users/sarahciresi/Downloads/newest_combined_val_epoch_14.csv"
+    preds_df = pd.read_csv(preds_csv)
+    preds_at_site = preds_df[preds_df['Site ID'] == site_id]
+    print(preds_at_site)

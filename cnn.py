@@ -22,7 +22,7 @@ class Small_CNN(nn.Module):
     def __init__(self, device = "cpu"):
         super(Small_CNN, self).__init__()
 
-        in_channels = 7 #8# 13
+        in_channels = 8 
         out_channels1 = 64
         out_channels2 = 128
         out_channels3 = 256
@@ -43,8 +43,8 @@ class Small_CNN(nn.Module):
         self.bn4 = nn.BatchNorm2d(out_channels4)
         self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        self.drop = nn.Dropout(p=0.2)
-        self.fc1 = nn.Linear(256 * 8 * 8, 4000) #128 * 24 * 24
+        self.drop = nn.Dropout(p=0.5)
+        self.fc1 = nn.Linear(256 * 8 * 8, 4000)
         self.fc2 = nn.Linear(4000, 100)
         self.fc3 = nn.Linear(100, 1) 
 
@@ -63,7 +63,7 @@ class Small_CNN(nn.Module):
         x = F.relu(self.bn4(x))
         x = self.pool4(x)        
         x = self.drop(x)
-        x = x.reshape(x.size(0), 256 * 8 * 8)  #128 * 24 * 24
+        x = x.reshape(x.size(0), 256 * 8 * 8) 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -93,8 +93,6 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
     summaries  = []
     num_batches = len(dataloader)
     train_dataset_size = num_batches * batch_size
-    batch_no = 0
-    num_batches = min(num_batches, 2000)
     
     # Set model to train mode
     model.train()
@@ -120,13 +118,14 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if scheduler != None:
-                scheduler.step()
+            #if scheduler != None:
+            #    scheduler.step()
                 
             # Move to cpu and convert to numpy
             outputs = outputs.data.cpu().numpy()
             labels = labels.data.cpu().numpy()
             indices = indices.data.cpu().numpy()
+            sites, dates = sites.data.cpu().numpy(), dates.data.cpu().numpy()
             
             # Compute batch metrics
             r2 = r2_score(labels, outputs) 
@@ -139,16 +138,12 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             t.set_postfix(loss=loss_str, r2=r2_str) 
             t.update()
             
-            if epoch % 25 == 0:
+            if epoch % 20 == 0:
             # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
                                        "predictions/cnn_train_preds_epoch_" + str(epoch) + ".csv") 
-            
-            batch_no += 1
-            if batch_no == 2000:
-                break
-            
+         
             del inputs, labels, outputs
             torch.cuda.empty_cache()
             
@@ -268,14 +263,10 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
             best_json_path = os.path.join(model_dir, "metrics_val_best_weights_regression_unbal.json")
             utils.save_dict_to_json(val_mean_metrics, best_json_path)
         
-        if epoch % 20 ==0:
+        if epoch % 10 == 0:
             print("Train losses: {} \n Validation losses: {}".format(all_train_losses, all_val_losses))
             print("Train mean R2s: {} \n Validation mean R2s: {}".format(all_train_r2, all_val_r2))
-            #utils.plot_losses(all_train_losses, all_val_losses, epoch, num_train,
-            #                  save_as="plots/loss_cnn_" + str(num_train) +"epoch"+ str(epoch) +".png")
-            #utils.plot_r2(all_train_r2, all_val_r2, epoche, num_train, 
-            #                 save_as="plots/r2_cnn_" + str(num_train) +"epoch"+ str(epoch) +".png")
-        
+            
             
     print("Train losses: {} ".format(all_train_losses))
     print("Val losses: {} ".format(all_val_losses))
@@ -300,7 +291,7 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
 
 
     # Evaluate on validation or test set
-    epoch = "--"
+    epoch = "all_val_threshold"
     mean_metrics = evaluate(model, loss_fn, dataloader, batch_size, epoch)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
@@ -308,25 +299,26 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
     
 if __name__ == "__main__":
     
-    cleaned_csv = "data_csv_files/master_csv_with_averages.csv"
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
-    sent_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
     checkpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt_small_cnn/"
     train_csv = "train_sites_master_csv_2016.csv"
-    val_csv = "mini_val_sites_shuffled5000_2016.csv" #"val_sites_master_csv_2016.csv"
+    val_csv = "val_sites_master_csv_2016.csv"
+    mini_val_csv = "mini_val_sites_shuffled5000_2016.csv" 
+    mini_train_csv = "mini_train_sites_shuffled15000_2016.csv"
     
     lr = 0.00001
-    reg = 1e-5
-    batch_size = 64
+    reg = 5e-2
+    batch_size = 90
     num_epochs = 100 
-    num_train = 154665
+    num_train = 107376 #154665
 
-    print("Training model for {} epochs with batch size: {}, lr: {}, reg: {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
+    print("Training for {} epochs with batch size: {}, lr: {}, reg: {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
     
-    #dataloaders = load_data(cleaned_csv, npy_dir, sent_dir, batch_size=batch_size, sample_balanced=True)
-    dataloaders = load_data_new(train_csv, batch_size = batch_size, num_workers=8,
-                                train_images=npy_dir, val_images=npy_dir,
-                                val_nonimage_csv=val_csv)  
+    dataloaders = load_data_new(train_csv, batch_size = batch_size, 
+                                sample_balanced=False, num_workers=8,
+                                train_images=npy_dir, val_images=npy_dir, 
+                                val_nonimage_csv=val_csv)    
+    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = Small_CNN(device) 
@@ -334,15 +326,26 @@ if __name__ == "__main__":
     model._set_seeds(0)
     model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
-
-
-    start_time = time.time()
     
     train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
-                       batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, model_dir = checkpt_dir)     
+                      batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, model_dir = checkpt_dir)     
+   
+    '''
+    predict(model, nn.MSELoss(), dataloaders['train'], batch_size=batch_size, num_epochs=num_epochs, 
+            dataset='train', model_dir=checkpt_dir, saved_weights_file="weights")
                        
     
-    print("--- %s seconds ---" % (time.time() - start_time))
-    print("done")
-
-
+    
+    preds="predictions/cnn_val_preds_epoch_all_val_threshold.csv"
+    monthly_preds = "predicted_and_true_avgs_csv.csv"
+    r2, pearson = utils.compute_r2(preds) 
+    print(r2)
+    print(pearson)
+    
+    utils.compute_pm_month_average_post(preds, cleaned_csv, averages_csv="averages.csv")
+    utils.plot_predictions(preds)
+    r2, pearson = utils.compute_r2_monthly("predicted_and_true_avgs_csv.csv")
+    '''
+    
+    
+  
