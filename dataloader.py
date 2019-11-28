@@ -12,8 +12,6 @@ import pdb
 import utils
 
 BATCH_SIZE = 32
-
-
 MIN_PM_VALUE = -9.7
 MAX_PM_VALUE = 20.5
 
@@ -21,11 +19,19 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        tensors = {"label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
+        tensors = {"index": sample["index"], "month": sample["month"], "site": sample["site"],
+                   "non_image" : torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float),
+                   "label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
         
         if "image" in sample:
-            # Swap channel axis
+            # Swap channel axis from H x W x C  to  C x H x W
             image = sample["image"].transpose((2, 0, 1))
+            
+            # Remove bands?  keep 0-3, 9-11
+            #first_4_bands = image[:4] 
+            #last_3_bands = image[9:12] #[9:12]
+            #image = np.concatenate((first_4_bands, last_3_bands), axis=0)
+            
             tensors["image"] = torch.from_numpy(np.asarray(image)).to(dtype=torch.float)
 
         if "non_image" in sample:
@@ -33,11 +39,44 @@ class ToTensor(object):
         
         return tensors
 
+class ToTensorOld(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __call__(self, sample):
+        image, lat, lon = sample['image'], sample['lat'], sample['lon']
+        prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
+        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
+        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
+        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
+        pm = sample['pm']
+    
+        # Swap channel axis
+        image = image.transpose((2, 0, 1))
+        return {'image': torch.from_numpy(np.asarray(image)), 
+                'lat': torch.from_numpy(np.asarray(lat)),
+                'lon': torch.from_numpy(np.asarray(lon)),
+                'prec': torch.from_numpy(np.asarray(prec)),
+                'snow': torch.from_numpy(np.asarray(snow)),
+                'snwd': torch.from_numpy(np.asarray(snwd)),
+                'tmin': torch.from_numpy(np.asarray(tmin)),
+                'tmax': torch.from_numpy(np.asarray(tmax)),
+                'month': torch.from_numpy(np.asarray(month)),
+                'mb1': torch.from_numpy(np.asarray(mb1)),
+                'mb2': torch.from_numpy(np.asarray(mb2)),
+                'mb3': torch.from_numpy(np.asarray(mb3)),
+                'mb4': torch.from_numpy(np.asarray(mb4)),
+                'mg1': torch.from_numpy(np.asarray(mg1)),
+                'mg2': torch.from_numpy(np.asarray(mg2)),
+                'mg3': torch.from_numpy(np.asarray(mg3)),
+                'mg4': torch.from_numpy(np.asarray(mg4)),
+                'pm': torch.from_numpy(np.asarray(pm))} 
+    
 class CombinedDataset(Dataset):
     """
     Class encapsulating the dataset of EPA/Weather data and Sentimel images.
     """
-    def __init__(self, master_csv_file, image_dir = None, threshold=None, classify=False):
+    def __init__(self, master_csv_file, image_dir = None, threshold=None, 
+                 classify=False, sample_balanced=False, predict_monthly=False):
         """
         Parameters
         ----------
@@ -56,20 +95,43 @@ class CombinedDataset(Dataset):
         An instance of a CombinedDataset.
         """
         self.epa_df = pd.read_csv(master_csv_file)
+        #self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
         self.image_dir = image_dir
-        self.transform = transforms.Compose([ToTensor()])
+        self.transform = transforms.Compose([ToTensor(), Normalize()])
         self.classify = classify
+        self.predict_monthly = predict_monthly
 
+        self.epa_df = self.epa_df[self.epa_df['PRCP']==0]   
+        
         if threshold != None:
             self.epa_df = self.epa_df[self.epa_df['Daily Mean PM2.5 Concentration'] < threshold]
+            print("Thresholding at {}".format(threshold))
         
-        if self.classify == True:
+        if self.classify == True or sample_balanced == True:
             
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] > 12.0, 'above_12'] = 1 
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
+        
+        if sample_balanced == True:
+            above_12_df = self.epa_df[self.epa_df['above_12'] == 1]
+            below_12_df = self.epa_df[self.epa_df['above_12'] == 0]
+            print("{} initially has {} examples below 12 and {} examples above 12.".format(master_csv_file, 
+                                                                                 len(below_12_df), 
+                                                                                 len(above_12_df)))
             
-        self.epa_df = utils.clean_df(self.epa_df)
-
+            self.epa_df = self.epa_df.sample(frac=1)
+            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:7500]
+            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:7500]
+            self.epa_df = pd.concat([above_12_df, below_12_df], ignore_index=True)
+            self.epa_df = self.epa_df.sample(frac=1)
+            
+            print("After sampling, {} has {} examples below 12 and {} examples above 12.".format(master_csv_file, 
+                                                                                 len(below_12_df), 
+                                                                                 len(above_12_df)))
+         
+        #self.epa_df = utils.clean_df(self.epa_df) no more cleaning needed, just change index
+        self.epa_df = self.epa_df.drop(['Unnamed: 0'], axis=1)
+        
     def __len__(self):
         return len(self.epa_df)
 
@@ -79,7 +141,15 @@ class CombinedDataset(Dataset):
 
         sample = {}
         epa_row = self.epa_df.iloc[idx]
-        sample["non_image"], _ = utils.get_epa_features(epa_row)
+        sample["index"] = self.epa_df.index[idx]
+           
+        # Added     
+        date = pd.to_datetime(epa_row['Date'])
+        sample["month"] = date.month
+        sample["site"] = epa_row['Site ID']
+        #
+
+        sample["non_image"], _ = utils.get_epa_features(epa_row) #no_snow
         if self.image_dir:
             tif_filename = str(epa_row["SENTINEL_FILENAME"])
             tif_index =  int(epa_row["SENTINEL_INDEX"])
@@ -88,52 +158,78 @@ class CombinedDataset(Dataset):
         
             try:
                 image = np.load(npy_fullpath)
+                #image = self.normalize(image)
 
             except (FileNotFoundError, ValueError) as exc:
                 image = np.zeros((200,200, 13))
+                print("File {} not found.".format(npy_fullpath))
                 
             sample["image"] = image
         
-        if self.classify == False:
-            pm = epa_row["Daily Mean PM2.5 Concentration"]
+        # Label based on task type
+        if self.classify == True:
+            label = epa_row["above_12"]
+        elif self.predict_monthly == True:
+            label = epa_row["Month Average"]
         else:
-            pm = epa_row["above_12"]
-            
-        sample["label"] = pm
+            label = epa_row["Daily Mean PM2.5 Concentration"]
+
+        sample["label"] = label
+        
         sample = self.transform(sample)
-     
+        
+        ## Select the 8 chosen bands
+        ## Should be moved into ToTensor, here for now because post-normalization
+        image = sample['image']
+        first_4_bands = image[:4] 
+        last_4_bands = image[9:]
+        image = np.concatenate((first_4_bands, last_4_bands), axis=0)
+        sample['image'] = image
+        
+        
         return sample
         
-
     def normalize(self, array):
-        if np.max(array) == np.min(array):
-            return array
-        return (array - np.min(array))*(255/(np.max(array)-np.min(array))).astype(int)
+        
+        # Get maxes and mins across all 13 channels
+        maxs = np.max(array, axis = (0,1))
+        mins = np.min(array, axis = (0,1))
+        diffs = maxs-mins
+        zeros = np.where(diffs==0)
+        diffs[zeros] = maxs[zeros]
+        
+        # If any are still zero, max[c] = min[c] = 0, 
+        # and we need to replace with ones to avoid divide by 0 errors
+        zeros = np.where(diffs==0)
+        diffs[zeros] = 1
+        
+        # Scale each channel individually to be between 0-255
+        return (array - maxs)*(255/diffs)
+    
 
 class Normalize(object):
     """Normalize image Tensors."""
 
     def __call__(self, sample):
-        image, lat, lon = sample['image'], sample['lat'], sample['lon']
-        prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
-        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
-        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
-        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
-        pm = sample['pm']
+        index, image, non_image, label = sample['index'], sample['image'], sample['non_image'], sample['label'] 
+        month, site = sample['month'], sample['site']
         
-        img_normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406, 0.5, 0.5, 0.5, 
-                                                       0.5,0.5,0.5,0.5,0.5,0.5,0.5],
-                                              std=[0.229, 0.224, 0.225, 0.226,0.225,0.225, 
-                                                   0.225,0.225,0.225,0.225,0.225,0.225,0.225])
-                                                   
-        image = img_normalization(image) 
-        # normalize features 
-        #pm = normalize_pm(pm, min_pm = MIN_PM_VALUE, max_pm = MAX_PM_VALUE)
-        return {'image': image, 'lat': lat, 'lon':lon, 'prec': prec, 'snow':snow,
-                'snwd': snwd, 'tmin':tmin, 'tmax':tmax, 'month': month, 
-                'mb1': mb1, 'mb2': mb2, 'mb3': mb3, 'mb4': mb4, 
-                'mg1': mg1, 'mg2': mg2, 'mg3': mg3, 'mg4': mg4, 
-                'pm': pm} 
+        img_norm = transforms.Normalize(mean=[3144.0764, 2940.7810, 2733.0339, 2820.7695, 2963.3057, 3402.0249,
+                                        3641.9360, 3506.4553, 3780.6147, 1732.4203,  313.6926, 2383.2466, 1815.5107], 
+                                        std=[2496.1377, 2527.8665, 2389.6580, 2587.3665, 2536.4597, 2420.5823,
+                                        2437.2566, 2353.8274, 2421.9773, 1651.2279,  693.4088, 1381.2958, 1147.4915])
+        
+        ft_means = np.array([38.7123, -96.0561, 6.8902, -0.4955, -0.4929, -0.4907, -0.4956,
+                                   -0.4731,-0.4710,-0.4700,-0.4747,26.2292,0.7070,6.7583,207.3810,86.5185])
+        
+        ft_stdvs = np.array([5.4067,17.2314,3.3965,0.5544,0.5546,0.5550,0.5543,0.5781,0.5783,
+                                                  0.5787,0.5778,83.8406,11.0480,70.6240,104.9007,95.1414])
+        
+        non_image = (non_image-torch.from_numpy(ft_means).to(dtype=torch.float))/torch.from_numpy(ft_stdvs).to(dtype=torch.float)
+                                                         
+        image = img_norm(image) 
+        
+        return {'index':index, 'image': image, 'non_image':non_image, 'month':month, 'site':site, 'label':label}
 
 
     
@@ -152,10 +248,10 @@ class SentinelDataset(Dataset):
         transform:         any data transforms to apply.
         '''
         self.epa_df = pd.read_csv(master_csv_file)
-        self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
+        #self.epa_df = self.epa_df.sample(frac=1) # shuffle the df
         self.s2_npy_dir = s2_npy_dir
         self.s2_tif_dir = s2_tif_dir
-        self.transform = transforms.Compose([ToTensor()]) #, Normalize()])
+        self.transform = transforms.Compose([ToTensorOld()]) #, Normalize()])
         self.classify = classify
 
         if threshold != None:
@@ -167,8 +263,8 @@ class SentinelDataset(Dataset):
             self.epa_df.loc[self.epa_df['Daily Mean PM2.5 Concentration'] <= 12.0, 'above_12'] = 0 
        
         if sample_balanced == True:
-            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:1000]
-            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:1000]
+            above_12_df = self.epa_df[self.epa_df['above_12'] == 1].iloc[0:200]
+            below_12_df = self.epa_df[self.epa_df['above_12'] == 0].iloc[0:200]
             self.epa_df = pd.concat([above_12_df, below_12_df], ignore_index=True)
             self.epa_df = self.epa_df.sample(frac=1)
             
@@ -258,7 +354,7 @@ def get_sampler(dataset_size, train_end, proportion):
     return SubsetRandomSampler(np.arange(sampler_start, sampler_end))
 
 def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0, 
-              **kwargs):
+              sample_balanced=False, predict_monthly=False, **kwargs):
     """
     Reads in training, val, and test data as specified by the provided dict. 
     Returns a dictionary of torch.util.data.DataLoaders for train and
@@ -318,10 +414,12 @@ def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0,
         * "test" (optional) : DataLoader for testing data
     """
     print("Using {} workers to load data...".format(num_workers))
-    train_dataset = CombinedDataset(train_nonimage_csv, kwargs.get("train_images"))
+    train_dataset = CombinedDataset(train_nonimage_csv, kwargs.get("train_images"), 
+                                    threshold=20.5, sample_balanced=sample_balanced,
+                                   predict_monthly=predict_monthly)
     train_end = len(train_dataset)
     if kwargs.get("test_nonimage_csv"):
-        test_dataset = CombinedDataset(kwargs["test_nonimage_csv"], kwargs.get("test_images"))
+        test_dataset = CombinedDataset(kwargs["test_nonimage_csv"], kwargs.get("test_images"), threshold=20.5)
         print("{} entries in test set".format(len(test_dataset)))
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True,
                                     num_workers = num_workers)
@@ -335,7 +433,8 @@ def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0,
         test_dataloader = None
         
     if kwargs.get("val_nonimage_csv"):
-        val_dataset = CombinedDataset(kwargs["val_nonimage_csv"], kwargs.get(val_images))
+        val_dataset = CombinedDataset(kwargs["val_nonimage_csv"], kwargs.get("val_images"), threshold=20.5, 
+                                       sample_balanced=sample_balanced, predict_monthly=predict_monthly)
         print("{} entries in validation set".format(len(val_dataset)))
         val_dataloader = DataLoader(val_dataset, batch_size=batch_size, 
                                     num_workers = num_workers, shuffle=True)
@@ -365,8 +464,9 @@ def load_data_new(train_nonimage_csv, batch_size = BATCH_SIZE, num_workers = 0,
         dataloaders["val"] = val_dataloader
     return dataloaders
 
-# TODO: do we need this anymore?
-def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_balanced=False):
+
+def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False,
+              sample_balanced=False, predict_monthly=False):
     ''' 
     Function that loads the data.
     Loads df from the given master data file:    master_csv
@@ -380,17 +480,20 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     Creates and returns separate dataloaders for train, val,
     and test datasets.
     '''
-    dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, 
-                              threshold=20.5, classify=classify, sample_balanced=sample_balanced)
-        
+    #dataset = SentinelDataset(master_csv_file=master_csv, s2_npy_dir=npy_dir, s2_tif_dir = sent_dir, 
+    #                         threshold=20.5, classify=classify, sample_balanced=sample_balanced)
+    
+    dataset = CombinedDataset(master_csv, image_dir=npy_dir, threshold=20.5, classify=classify, 
+                              sample_balanced=sample_balanced, predict_monthly=predict_monthly)  
+    
     # Split 60/20/20 for now to train on less
-    split1, split2 = .1, .8 #.4, .4    #.6 .2
+    split1, split2 = .1, .2 
     full_ds_size = len(dataset) 
     indices = list(range(full_ds_size))
     split1 = int(np.floor(split1*full_ds_size))
     split2 = full_ds_size - int(np.floor(split2*full_ds_size))
 
-    split1, split2 = 1000, 2000 #20000, 25000 #1000, 2000 #10000, 15000 #2000, 4000 #1000, 2000 #30000, 31000
+    split1, split2 =  5000, 8000 #60000, 90000 #5000, 10000 for monthly preds  #10000, 15000 for preds before
     train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
 
     print("Looking at images {} - {} for train, {} - {} for val, and {} - {} for test."
@@ -400,8 +503,8 @@ def load_data(master_csv, npy_dir, sent_dir, batch_size, classify=False, sample_
     val_sampler = SubsetRandomSampler(val_indices)
     test_sampler = SubsetRandomSampler(test_indices)
     
-    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=4)
-    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=2)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=8)
+    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=8)
     test_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
 
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
@@ -427,5 +530,82 @@ def show_samples(dataset, num_samples):
             plt.show()
             break
 
+
+def split_data_by_site(master_csv):
+    '''
+    Original function to split the 2016 data by site.
+    Given the master csv file of all datapoints (for a given year), does the initial
+    split of sites into train, val, and test.
+    Saves that years data into train_site_data, val_site_data, and test_site_data
+    master csv files.
+    
+    For future years data, will use same site split- so need to edit as appropriate.
+
+    '''
+    all_data = pd.read_csv(master_csv)
+    all_data = utils.clean_df(all_data)
+    epa_stations = all_data['Site ID'].unique()
+    epa_stations = epa_stations.tolist()
+    num_sites = len(epa_stations)  # used to compute indices for 60/20/20 split 
+    '''
+    random.shuffle(epa_stations)
+    train_sites = epa_stations[:690]
+    val_sites = epa_stations[690:920]
+    test_sites = epa_stations[920:]
+    '''
+    ## in future, instead of above, change to split 
+    ##based on .unique 'Site ID' rows from train_site_2016, etc.
+    ## e.g.:
+    #       train_data_2016 = pd.read_csv("train_sites_master_csv_2016.csv" 
+    #       train_sites = train_data_2016['Site ID'].unique().tolist()
+    #       train_data_2017 = all_data_2017[all_data_2017['Site ID'].isin(train_sites)]
+    #       train_data_2017.to_csv("train_sites_master_csv_2017.csv")
+    
+    train_data = all_data[all_data['Site ID'].isin(train_sites)]
+    val_data = all_data[all_data['Site ID'].isin(val_sites)]
+    test_data = all_data[all_data['Site ID'].isin(test_sites)]
+    
+    train_data.to_csv("train_sites_master_csv_2016.csv")
+    val_data.to_csv("val_sites_master_csv_2016.csv")
+    test_data.to_csv("test_sites_master_csv_2016.csv")
+    
+    
+    
+#detach, move to cpu, call numpy, numpy.save(path, array)
+#simultaneously save outputs
+#embedding dataset which reads the numpy arrays at initialization
+#implement len
+#implement get_item
+
+class EmbeddingDataset(Dataset):
+    def __init__(self, labels_path, ns_labels_path, s_labels_path, embeddings_path):
+        self.labels = np.load(labels_path)
+        self.embeddings = np.load(embeddings_path)
+        self.ns_labels = np.load(ns_labels_path)
+        self.s_labels = np.load(s_labels_path)
+    def __len__(self):
+        return self.labels.size
+    def __getitem__(self, idx):
+        label = self.labels[idx]
+        embed = self.embeddings[idx]
+        #embed = 0
+        return {'pm':label,'embed':embed,'ns_pred':self.ns_labels[idx],'s_pred':self.s_labels[idx]}
+
+def load_embeddings(labels_path, ns_labels_path, s_labels_path, embeddings_path,batch_size):
+    dataset = EmbeddingDataset(labels_path, ns_labels_path, s_labels_path, embeddings_path)
+    full_ds_size = len(dataset) 
+    indices = list(range(full_ds_size))
+    split1, split2 = 64*240,64*300
+    train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
+    train_sampler = SubsetRandomSampler(train_indices)
+    val_sampler = SubsetRandomSampler(val_indices)
+    test_sampler = SubsetRandomSampler(test_indices)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=4)
+    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=2)
+    test_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
+    
+    dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
+    
+    return dataloaders
             
 
