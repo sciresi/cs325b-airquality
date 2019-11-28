@@ -213,8 +213,7 @@ def find_closest_sentinel_index(epa_date, sentinel_dates):
 	return closest_index
 
 
-def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path
-					  sentinel_dates):
+def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path, sentinel_dates):
 	"""
 	Takes a row of a pandas.DataFrame storing an EPA measurement and adds the
 	Sentinel image filename corresponding to the closest Sentinel image
