@@ -131,6 +131,7 @@ class CombinedDataset(Dataset):
          
         #self.epa_df = utils.clean_df(self.epa_df) no more cleaning needed, just change index
         self.epa_df = self.epa_df.drop(['Unnamed: 0'], axis=1)
+        self.epa_df = self.epa_df[self.epa_df['SENTINEL_INDEX'] != -1]
         
     def __len__(self):
         return len(self.epa_df)
@@ -151,13 +152,15 @@ class CombinedDataset(Dataset):
 
         sample["non_image"], _ = utils.get_epa_features(epa_row) #no_snow
         if self.image_dir:
-            tif_filename = str(epa_row["SENTINEL_FILENAME"])
+            year = str(date.year)
+            npy_filename = str(epa_row["SENTINEL_FILENAME"])
             tif_index =  int(epa_row["SENTINEL_INDEX"])
-            npy_filename = tif_filename[:-4] + "_" + str(tif_index) + ".npy"
-            npy_fullpath = os.path.join(self.image_dir, npy_filename)
+            if year == "2016":
+                npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
+            npy_fullpath = os.path.join(self.image_dir, year, npy_filename)
         
             try:
-                image = np.load(npy_fullpath)
+                image = np.load(npy_fullpath).astype(np.int16)
                 #image = self.normalize(image)
 
             except (FileNotFoundError, ValueError) as exc:
@@ -273,6 +276,7 @@ class SentinelDataset(Dataset):
         self.epa_df = self.epa_df[self.epa_df['PRCP']>-1]
         self.epa_df = self.epa_df[self.epa_df['TMAX'].notnull()]
         self.epa_df = self.epa_df[self.epa_df['TMIN'].notnull()]
+        self.epa_df = self.epa_df[self.epa_df['SENTINEL_INDEX'] != -1]
     
     
     def __len__(self):
