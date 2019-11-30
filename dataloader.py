@@ -101,7 +101,12 @@ class CombinedDataset(Dataset):
         self.classify = classify
         self.predict_monthly = predict_monthly
 
-        self.epa_df = self.epa_df[self.epa_df['PRCP']==0]   
+        self.epa_df['PRCP'].fillna(-1,inplace=True)
+        self.epa_df = self.epa_df[self.epa_df['PRCP']>-1]
+        self.epa_df['SNOW'].fillna(-1,inplace=True)
+        self.epa_df['SNWD'].fillna(-1,inplace=True)
+        self.epa_df = self.epa_df[self.epa_df['TMAX'].notnull()]
+        self.epa_df = self.epa_df[self.epa_df['TMIN'].notnull()]
         
         if threshold != None:
             self.epa_df = self.epa_df[self.epa_df['Daily Mean PM2.5 Concentration'] < threshold]
