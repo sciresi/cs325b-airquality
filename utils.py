@@ -739,7 +739,7 @@ def average_analysis(averages_csv):
         print("Month {} mean average over all sites: {}".format(month, mean_avg_pm_allsites))
 
         
-def plot_predictions(predictions_csv):
+def plot_predictions(predictions_csv, model_name):
     '''
     Method to plot true PM2.5 values vs. model predicted values based on predictions in
     the predictions_csv file.
@@ -751,15 +751,15 @@ def plot_predictions(predictions_csv):
     labels = df['Label']
    
     plt.scatter(labels, predictions, s=1)
-    plt.xlabel("Real PM2.5 Values (μg/$m^3$')")
-    plt.ylabel("Model PM2.5 Predictions (μg/$m^3$')")
+    plt.xlabel("Real PM2.5 Values (μg/$m^3$')", fontsize=14)
+    plt.ylabel("Model PM2.5 Predictions (μg/$m^3$')", fontsize=14)
     plt.axis([-10, 25, -10, 25])
-    plt.title("True PM2.5 Values versus Model PM2.5 Predictions")
-    plt.savefig("plots/true_vs_preds_new.png")
+    plt.title("True PM2.5 Values versus Model PM2.5 Predictions: " + model_name, fontsize=16)
+    plt.savefig("plots/true_vs_preds_new_ " + model_name +".png")
     plt.show()
 
     
-def plot_predictions_histogram(predictions_csv, dataset='val'):
+def plot_predictions_histogram(predictions_csv, model_name, dataset='val'):
     '''                                                 
     Takes in .csv created from save_predictions of (indices, predictions, labels)
     for each example. Then plots the histogram of the predictions vs. the labels.  
@@ -771,8 +771,11 @@ def plot_predictions_histogram(predictions_csv, dataset='val'):
     bins = 75
    
     #plt.axis([0, 200, -10, 300]) # really should be number of examples                                                                                                                                        
-    plt.hist(predictions, bins, alpha=.9,label = dataset+'Predictions')
-    plt.hist(labels, bins, alpha=.9,label = dataset+'Labels')
+    plt.hist(predictions, bins, alpha=.9,label = 'Predictions')
+    plt.hist(labels, bins, alpha=.9,label = 'Labels')
+    plt.xlabel("Prediction/Target Value")
+    plt.ylabel("Frequency")
+    plt.title("Histograms of Predicted Values versus Ground Truth Labels on Test Sites")
     plt.legend()
     plt.savefig("plots/"+dataset+"_predictions_hist.png")
     plt.show()
@@ -838,3 +841,14 @@ def get_outlier_info(master_csv):
     preds_df = pd.read_csv(preds_csv)
     preds_at_site = preds_df[preds_df['Site ID'] == site_id]
     print(preds_at_site)
+
+def get_mean_mse(predictions_csv):
+    pandarallel.initialize()
+
+    df = pd.read_csv(predictions_csv)
+    mses = df.parallel_apply(mse_row, axis=1)
+    df['MSE'] = mses
+
+    # Compute mean and stdev of MSEs
+    mean_mse = np.mean(mses)
+    return mean_mse

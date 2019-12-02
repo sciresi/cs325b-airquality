@@ -301,21 +301,19 @@ if __name__ == "__main__":
     
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
     checkpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt_small_cnn/"
-    train_csv = "train_sites_master_csv_2016.csv"
-    val_csv = "val_sites_master_csv_2016.csv"
-    mini_val_csv = "mini_val_sites_shuffled5000_2016.csv" 
-    mini_train_csv = "mini_train_sites_shuffled15000_2016.csv"
-    
-    lr = 0.00001
+    train_csv = "data_csv_files/train_sites_master_csv_2016.csv"
+    val_csv = "data_csv_files/val_sites_master_csv_2016.csv"
+   
+    lr = 0.00002
     reg = 5e-2
     batch_size = 90
-    num_epochs = 100 
+    num_epochs = 20 
     num_train = 107376 #154665
 
     print("Training for {} epochs with batch size: {}, lr: {}, reg: {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
     
     dataloaders = load_data_new(train_csv, batch_size = batch_size, 
-                                sample_balanced=False, num_workers=8,
+                                sample_balanced=True, num_workers=8,
                                 train_images=npy_dir, val_images=npy_dir, 
                                 val_nonimage_csv=val_csv)    
     

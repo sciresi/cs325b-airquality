@@ -28,11 +28,11 @@ class CNN_combined(nn.Module):
         super(CNN_combined, self).__init__()
 
         in_channels = 8 #7 #13
-        out_channels1 = 64 #64
-        out_channels2 = 128 #128
-        out_channels3 = 256 #256
+        out_channels1 = 64  
+        out_channels2 = 128  
+        out_channels3 = 256  
         out_channels4 = 256
-        num_ff_features = 16 #14
+        num_ff_features = 16  
         
         self.device = device
         
@@ -174,7 +174,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
             # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
-                                       "predictions/newest_combined_train_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/newest3_combined_train_epoch_" + str(epoch) + ".csv") 
             
             writer.add_scalar('train/loss', loss, t_global_step)
             writer.add_scalar('train/r2', r2, t_global_step)
@@ -231,7 +231,7 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch, v_global_step):
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
-                                       "predictions/newest_combined_val_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/newest3_combined_test1617_epoch_" + str(epoch) + ".csv") 
           
                 # Compute batch metrics
                 r2 = r2_score(labels, outputs) #.cpu().detach().numpy())
@@ -343,7 +343,7 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
 
     # Evaluate on validation or test set
     epoch = "--"
-    mean_metrics = evaluate(model, loss_fn, dataloader, batch_size, epoch)
+    mean_metrics, v_global_step = evaluate(model, loss_fn, dataloader, batch_size, epoch, 0)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
     
@@ -351,64 +351,55 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
     
 def weighted_mse_loss(inputs, targets, global_cnt, dataset):
     
+    batch_size = inputs.shape[0]
     zeros = torch.zeros_like(inputs)
-    above_15_targets = torch.where(targets>15, targets, zeros)  
-    middle_targets = torch.where(targets>= 5, targets, zeros) 
-    middle_targets =  torch.where(middle_targets<=15, targets, zeros)
-    below_5_targets = torch.where(targets<5, targets, zeros) 
     
-    above_15_inputs = torch.where(targets>15, inputs, zeros)  
-    middle_inputs = torch.where(targets>= 5, inputs, zeros) 
-    middle_inputs =  torch.where(middle_targets<=15, inputs, zeros)
-    below_5_inputs = torch.where(targets<5, inputs, zeros) 
+    above_15_targets = torch.where(targets>13, targets, zeros)  
+    middle_targets = torch.where(targets>= 3, targets, zeros) 
+    middle_targets =  torch.where(middle_targets<=13, targets, zeros)
+    below_5_targets = torch.where(targets<3, targets, zeros) 
     
-    loss_above = torch.sum(0.45 *(above_15_inputs - above_15_targets) ** 2)
-    loss_middle = torch.sum(0.1 *(middle_inputs - middle_targets) ** 2)
-    loss_below = torch.sum(0.45 *(below_5_inputs - below_5_targets) ** 2)
+    above_15_inputs = torch.where(targets>13, inputs, zeros)  
+    middle_inputs = torch.where(targets>= 3, inputs, zeros) 
+    middle_inputs =  torch.where(middle_targets<=13, inputs, zeros)
+    below_5_inputs = torch.where(targets<3, inputs, zeros) 
     
+    loss_below = torch.sum(2 *(below_5_inputs - below_5_targets) ** 2)  # 5
+    loss_middle = torch.sum(1 *(middle_inputs - middle_targets) ** 2)    # 1 
+    loss_above = torch.sum(10 *(above_15_inputs - above_15_targets) ** 2) # 5
+
     writer.add_scalar(dataset+"/loss_low", loss_below, global_cnt )
     writer.add_scalar(dataset+"/loss_mid", loss_middle, global_cnt)
     writer.add_scalar(dataset+"/loss_high", loss_above, global_cnt)
     
-   
-    #print("Loss above: {}, loss middle: {}, loss below: {}".format(loss_above,loss_middle,loss_below))
-    #print("\n")
-    
-    loss = loss_above + loss_middle + loss_below
-    '''
-    loss = torch.sum(0.45 *(above_15_inputs - above_15_targets) ** 2
-                     + 0.1 *(middle_inputs - middle_targets) ** 2
-                     + 0.45 *(below_5_inputs - below_5_targets) ** 2
-                    )
-     '''
-                    
+    loss = (loss_above + loss_middle + loss_below)/batch_size
+       
     return loss
 
 
 if __name__ == "__main__":
     
-    cleaned_csv = "data_csv_files/master_csv_with_averages.csv"
-    train_csv = "train_sites_master_csv_2016.csv"
-    val_csv = "val_sites_master_csv_2016.csv"
-    mini_val_csv = "mini_val_sites_shuffled5000_2016.csv"  
-    mini_train_csv = "mini_train_sites_shuffled15000_2016.csv"
+    train_csv = "data_csv_files/train_sites_master_csv_2016.csv"
+    val_csv = "data_csv_files/val_sites_master_csv_2016.csv"
+    test_csv = "data_csv_files/test_sites_master_csv_2016_2017.csv"
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
-    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/new_checkpoint3/"   #checkpoint 2 has positive val r2s
+    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/new_checkpoint3/"   #checkpoint 3 best
     
-    log_dir="logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     writer = SummaryWriter() #log_dir)
 
-    lr = 0.00009 #main 0.0001 ##try 0.0005, then 0.00001 
+    lr = 0.0002 #0.00009 recent #main 0.0001 ##try 0.0005, then 0.00001 
     reg = 5e-2
     batch_size = 90
     num_epochs = 40
-    num_train = 92875+14501
+    num_train = 107376
    
     print("Training model for {} epochs with batch size = {}, lr = {}, reg = {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
    
     dataloaders = load_data_new(train_csv, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
-                                train_images=npy_dir, val_images=npy_dir, val_nonimage_csv=val_csv)    
+                                train_images=npy_dir, test_images=npy_dir, 
+                                test_nonimage_csv=test_csv)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = CNN_combined(device)
@@ -418,16 +409,17 @@ if __name__ == "__main__":
     model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
     
-    start_time = time.time()
-    
+    start_time = time.time() #nn.MSELoss()
+    '''
     train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
                        batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
-                       model_dir = chckpt_dir, saved_weights_file="all_time_best_2")
-    
-    # predict(model, nn.MSELoss(), dataloaders['val'], batch_size, num_epochs, 
-    #        dataset='val', model_dir=chckpt_dir, saved_weights_file="last_6")
+                       model_dir = chckpt_dir, saved_weights_file="all_time_best_3") #all_time_best_3
+    '''
+    predict(model, nn.MSELoss(), dataloaders['test'], batch_size, num_epochs, 
+            dataset='test', model_dir=chckpt_dir, saved_weights_file="best_6_scratch")
    
-    #preds = "predictions/combined_val--.csv"
+    #preds = "predictions/newest3_combined_val_epoch_--.csv"
+    #mse = utils.get_mean_mse(preds)
     #r2, pearson = utils.compute_r2(preds) 
     #print(r2)
     #print(pearson)
@@ -443,8 +435,5 @@ if __name__ == "__main__":
     '''
 
     #utils.compute_pm_month_average_post(preds, cleaned_csv)
-
-    
-    
 
     writer.close()
