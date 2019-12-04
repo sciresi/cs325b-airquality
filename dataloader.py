@@ -19,7 +19,7 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        tensors = {"index": sample["index"], "month": sample["month"], "site": sample["site"],
+        tensors = {"index": sample["index"], "month": sample["month"], "site": sample["site"], "state": sample["state"],
                    "non_image" : torch.from_numpy(np.asarray(sample["non_image"])).to(dtype=torch.float),
                    "label" : torch.from_numpy(np.asarray(sample["label"])).to(dtype=torch.float)}
         
@@ -39,37 +39,6 @@ class ToTensor(object):
         
         return tensors
 
-class ToTensorOld(object):
-    """Convert ndarrays in sample to Tensors."""
-
-    def __call__(self, sample):
-        image, lat, lon = sample['image'], sample['lat'], sample['lon']
-        prec, snow, snwd = sample['prec'], sample['snow'], sample['snwd']
-        tmin, tmax, month = sample['tmin'], sample['tmax'], sample['month']
-        mb1, mb2, mb3, mb4 = sample['mb1'], sample['mb2'], sample['mb3'], sample['mb4']
-        mg1, mg2, mg3, mg4 = sample['mg1'], sample['mg2'], sample['mg3'], sample['mg4']
-        pm = sample['pm']
-    
-        # Swap channel axis
-        image = image.transpose((2, 0, 1))
-        return {'image': torch.from_numpy(np.asarray(image)), 
-                'lat': torch.from_numpy(np.asarray(lat)),
-                'lon': torch.from_numpy(np.asarray(lon)),
-                'prec': torch.from_numpy(np.asarray(prec)),
-                'snow': torch.from_numpy(np.asarray(snow)),
-                'snwd': torch.from_numpy(np.asarray(snwd)),
-                'tmin': torch.from_numpy(np.asarray(tmin)),
-                'tmax': torch.from_numpy(np.asarray(tmax)),
-                'month': torch.from_numpy(np.asarray(month)),
-                'mb1': torch.from_numpy(np.asarray(mb1)),
-                'mb2': torch.from_numpy(np.asarray(mb2)),
-                'mb3': torch.from_numpy(np.asarray(mb3)),
-                'mb4': torch.from_numpy(np.asarray(mb4)),
-                'mg1': torch.from_numpy(np.asarray(mg1)),
-                'mg2': torch.from_numpy(np.asarray(mg2)),
-                'mg3': torch.from_numpy(np.asarray(mg3)),
-                'mg4': torch.from_numpy(np.asarray(mg4)),
-                'pm': torch.from_numpy(np.asarray(pm))} 
     
 class CombinedDataset(Dataset):
     """
@@ -137,6 +106,8 @@ class CombinedDataset(Dataset):
         #self.epa_df = utils.clean_df(self.epa_df) no more cleaning needed, just change index
         self.epa_df = self.epa_df.drop(['Unnamed: 0'], axis=1)
         self.epa_df = self.epa_df[self.epa_df['SENTINEL_INDEX'] != -1]
+        self.epa_df = utils.clean_df(self.epa_df)
+        print("Final dataset size for {} file after filtering:  {}".format(master_csv_file, len(self.epa_df)))
         
     def __len__(self):
         return len(self.epa_df)
@@ -153,6 +124,7 @@ class CombinedDataset(Dataset):
         date = pd.to_datetime(epa_row['Date'])
         sample["month"] = date.month
         sample["site"] = epa_row['Site ID']
+        sample["state"] = epa_row['STATE']
         #
 
         sample["non_image"], _ = utils.get_epa_features(epa_row) #no_snow
@@ -220,7 +192,7 @@ class Normalize(object):
 
     def __call__(self, sample):
         index, image, non_image, label = sample['index'], sample['image'], sample['non_image'], sample['label'] 
-        month, site = sample['month'], sample['site']
+        month, site, state = sample['month'], sample['site'], sample['state']
         
         img_norm = transforms.Normalize(mean=[3144.0764, 2940.7810, 2733.0339, 2820.7695, 2963.3057, 3402.0249,
                                         3641.9360, 3506.4553, 3780.6147, 1732.4203,  313.6926, 2383.2466, 1815.5107], 
@@ -237,7 +209,8 @@ class Normalize(object):
                                                          
         image = img_norm(image) 
         
-        return {'index':index, 'image': image, 'non_image':non_image, 'month':month, 'site':site, 'label':label}
+        return {'index':index, 'image': image, 'non_image':non_image, 'month':month, 'site':site, 'state':state,
+                'label':label}
 
 
     

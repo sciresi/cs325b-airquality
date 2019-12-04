@@ -118,7 +118,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
     batch_size = 32
     num_batches = len(dataloader)
     train_dataset_size = num_batches * batch_size
-    
+    num_batches = min(1500,num_batches)
     # Set model to train mode
     model.train()
    
@@ -129,7 +129,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
         for i, sample in enumerate(dataloader):
             
             indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
-            sites, dates = sample['site'], sample['month']
+            sites, dates, states = sample['site'], sample['month'], sample['state']
             
             # Move to GPU if available       
             inputs = inputs.to(model.device, dtype=torch.float)
@@ -173,12 +173,15 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
             if epoch % 10 == 0:
             # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
-                utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
-                                       "predictions/newest3_combined_train_epoch_" + str(epoch) + ".csv") 
+                utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
+                                       "predictions/newest5_combined_train1617_epoch_" + str(epoch) + ".csv") 
             
             writer.add_scalar('train/loss', loss, t_global_step)
             writer.add_scalar('train/r2', r2, t_global_step)
             t_global_step += 1
+                
+            if i == num_batches:
+                break
                 
             del inputs, features, labels, outputs
             torch.cuda.empty_cache()
@@ -210,7 +213,7 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch, v_global_step):
             for i, sample in enumerate(dataloader):
                 
                 indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
-                sites, dates = sample['site'], sample['month']
+                sites, dates, states = sample['site'], sample['month'], sample['state']
 
                 # Move to GPU if available       
                 inputs = inputs.to(model.device, dtype=torch.float)
@@ -230,8 +233,8 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch, v_global_step):
                 
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
-                utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
-                                       "predictions/newest3_combined_test1617_epoch_" + str(epoch) + ".csv") 
+                utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
+                                       "predictions/newest6_combined_test_1617_epoch_" + str(epoch) + ".csv") 
           
                 # Compute batch metrics
                 r2 = r2_score(labels, outputs) #.cpu().detach().numpy())
@@ -342,7 +345,7 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
 
 
     # Evaluate on validation or test set
-    epoch = "--"
+    epoch = "predict"
     mean_metrics, v_global_step = evaluate(model, loss_fn, dataloader, batch_size, epoch, 0)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
@@ -378,25 +381,26 @@ def weighted_mse_loss(inputs, targets, global_cnt, dataset):
 
 
 if __name__ == "__main__":
-    
-    train_csv = "data_csv_files/train_sites_master_csv_2016.csv"
-    val_csv = "data_csv_files/val_sites_master_csv_2016.csv"
+    train_csv = "data_csv_files/train_sites_master_csv_2017.csv"
+    val_csv = "data_csv_files/val_sites_master_csv_2017.csv"    
+    train_csv_all = "data_csv_files/train_sites_master_csv_2016_2017.csv"
+    val_csv_all = "data_csv_files/val_sites_master_csv_2016_2017.csv"
     test_csv = "data_csv_files/test_sites_master_csv_2016_2017.csv"
     npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
-    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/new_checkpoint3/"   #checkpoint 3 best
+    chckpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/new_checkpoint3/"   
     
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    writer = SummaryWriter() #log_dir)
+    writer = SummaryWriter() 
 
-    lr = 0.0002 #0.00009 recent #main 0.0001 ##try 0.0005, then 0.00001 
+    lr = 0.0001  
     reg = 5e-2
     batch_size = 90
-    num_epochs = 40
-    num_train = 107376
+    num_epochs = 20
+    num_train = 308132 
    
-    print("Training model for {} epochs with batch size = {}, lr = {}, reg = {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
+    print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
    
-    dataloaders = load_data_new(train_csv, batch_size = batch_size, 
+    dataloaders = load_data_new(train_csv_all, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, test_images=npy_dir, 
                                 test_nonimage_csv=test_csv)    
@@ -409,31 +413,16 @@ if __name__ == "__main__":
     model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
     
-    start_time = time.time() #nn.MSELoss()
+    start_time = time.time() 
     '''
     train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
                        batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
-                       model_dir = chckpt_dir, saved_weights_file="all_time_best_3") #all_time_best_3
+                       model_dir = chckpt_dir, saved_weights_file="all_time_best_6") #all_time_best_3
     '''
     predict(model, nn.MSELoss(), dataloaders['test'], batch_size, num_epochs, 
-            dataset='test', model_dir=chckpt_dir, saved_weights_file="best_6_scratch")
-   
-    #preds = "predictions/newest3_combined_val_epoch_--.csv"
-    #mse = utils.get_mean_mse(preds)
-    #r2, pearson = utils.compute_r2(preds) 
-    #print(r2)
-    #print(pearson)
-    
+            dataset='test', model_dir=chckpt_dir, saved_weights_file="all_time_best_6")
+  
     print("done")
     print("--- %s seconds ---" % (time.time() - start_time))
-    '''
-    val_preds = "predictions/combined_val_old3.csv"
-    utils.plot_predictions_histogram(val_preds, 'val')
-
-    train_preds= "predictions/combined_train_preds_epoch_0.csv"
-    utils.plot_predictions_histogram(train_preds, 'train')
-    '''
-
-    #utils.compute_pm_month_average_post(preds, cleaned_csv)
 
     writer.close()

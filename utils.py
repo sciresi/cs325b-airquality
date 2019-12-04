@@ -72,6 +72,9 @@ def get_directory_paths(folder_path):
     directories = filter(lambda name : not name.startswith("."), directories)
     return [os.path.join(folder_path, directory) for directory in directories]
 
+def flatten(l):
+    return [num for item in l for num in (item if isinstance(item, list) else (item,))]
+
 def clean_df(df):
 
     # TODO: add more filtering? change how we replace nans?
@@ -285,7 +288,7 @@ def plot_r2(train_r2, val_r2, num_epochs, num_ex, save_as):
     plt.savefig(save_as)
     
         
-def save_predictions(indices, predictions, labels, sites, dates, batch_size, save_to):
+def save_predictions(indices, predictions, labels, sites, dates, states, batch_size, save_to):
     '''
     Method to save indices, labels, and predictions of a given batch. 
     All batches over entire epoch will be saved to the same file,
@@ -299,7 +302,8 @@ def save_predictions(indices, predictions, labels, sites, dates, batch_size, sav
             y_true = labels[i]
             site = sites[i]
             date = dates[i]
-            row = [index, y_pred, y_true, site, date]
+            state = states[i]
+            row = [index, y_pred, y_true, site, date, state]
             writer.writerow(row)
             
 def strip_and_freeze(model):
@@ -629,7 +633,7 @@ def plot_predictions(predictions_csv, model_name):
     plt.xlabel("Real PM2.5 Values (μg/$m^3$')", fontsize=14)
     plt.ylabel("Model PM2.5 Predictions (μg/$m^3$')", fontsize=14)
     plt.axis([-10, 25, -10, 25])
-    plt.title("True PM2.5 Values versus Model PM2.5 Predictions: " + model_name, fontsize=16)
+    plt.title("True PM2.5 Values versus Model \n PM2.5 Predictions: " + model_name, fontsize=16)
     plt.savefig("plots/true_vs_preds_new_ " + model_name +".png")
     plt.show()
 
@@ -650,9 +654,9 @@ def plot_predictions_histogram(predictions_csv, model_name, dataset='val'):
     plt.hist(labels, bins, alpha=.9,label = 'Labels')
     plt.xlabel("Prediction/Target Value")
     plt.ylabel("Frequency")
-    plt.title("Histograms of Predicted Values versus Ground Truth Labels on Test Sites")
+    plt.title("Histograms of Predicted Values versus Ground Truth Labels on Test Data: " + model_name, fontsize=16)
     plt.legend()
-    plt.savefig("plots/"+dataset+"_predictions_hist.png")
+    plt.savefig("plots/"+dataset+"_" + model_name + "_predictions_hist.png")
     plt.show()
 
     
