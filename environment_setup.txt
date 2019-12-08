@@ -1,0 +1,32 @@
+The data processing stage will expect a folder in the home directory that
+exactly mirrors the structure of the Google Cloud bucket. The relevant folders
+are below:
+
+es262-airquality/
+├── epa
+├── GHCND_weather
+├── modis
+│   ├── 2016_processed_100x100
+│   ├── 2017_processed_100x100
+│   ├── 2018_processed_100x100
+│   └── 2019_processed_100x100
+└── sentinel
+    ├── 2016
+    ├── 2017
+    └── Metadata
+
+There should also be a code/ folder in the home directory as well for both
+the data preprocessing and model training/evaluation stages. 
+
+Included in the .zip file is a processed_data.tar.gz file. When uncompressed, 
+it gives the following directory:
+
+processed_data/
+├── test_sites_master_csv_2017.csv
+├── train_sites_master_csv_2017.csv
+└── val_sites_master_csv_2017.csv
+
+These store the train/val/test data for the already-preprocessed non-image data.
+It's highly recommended that you use this data and just run the preprocessing
+stage for the Sentinel-2 data (see run_instructions.txt). Note that this folder
+should also be in the home directory.
