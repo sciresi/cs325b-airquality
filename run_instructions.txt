@@ -15,4 +15,5 @@ stage, and then run training. The preprocessing stage takes a very long time,
 so it's highly recommended to use the preprocessed files provded in 
 processed_data.tar.gz (see environment_setup.txt), and run main.sh with the
 process_sentinel_only flag when running for the first time. Subsequent 
-training-only runs can obviously include the --skip_preprocessing flag.
+training-only runs can obviously include the --skip_preprocessing flag. Make
+sure main.sh is inside the home directory when running!
