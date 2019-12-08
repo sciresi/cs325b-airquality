@@ -14,8 +14,31 @@ from sklearn.metrics import r2_score
 from pandarallel import pandarallel 
 from scipy.stats.stats import pearsonr
 
+BUCKET_FOLDER = "es262-airquality"
+EPA_FOLDER = os.path.join(BUCKET_FOLDER, "epa")
+GHCND_BASE_FOLDER = os.path.join(BUCKET_FOLDER, "GHCND_weather")
+GHCND_DATA_FOLDER = os.path.join(GHCND_BASE_FOLDER, "ghcnd_hcn")
+SENTINEL_FOLDER = os.path.join(BUCKET_FOLDER, "sentinel")
+SENTINEL_METADATA_FOLDER = os.path.join(SENTINEL_FOLDER, "Metadata")
+PROCESSED_DATA_FOLDER = "processed_data"
 
-def load_csv_dfs(folder_path, blacklist = []):
+#gathers all the 2016 csv files into one dataframe
+#returns dataframe
+def get_epa(epa_directory, year = '2016'):
+    files = os.listdir(epa_directory)
+    first_file = True
+    for file in files:
+        if file[-8:]== year + ".csv":
+            file_path = os.path.join(epa_directory, file)
+            new_df = pd.read_csv(file_path)
+            if not first_file:
+                df = df.append(new_df,ignore_index=True)
+            else:
+                df = new_df
+                first_file = False
+    return df
+
+def load_csv_dfs(folder_path, blacklist = [], excluded_years = []):
     """
     Loads all .csv files from the specified folder and concatenates into one
     giant Pandas dataframe. Potential extension to different file types if we
@@ -33,15 +56,18 @@ def load_csv_dfs(folder_path, blacklist = []):
     df : pandas.DataFrame
         DataFrame for all of the .csv files in the specified folder.
     """
-    
     df_list = []
     for filename in os.listdir(folder_path):
-        if os.path.splitext(filename)[1] != ".csv":
+        file, ext = os.path.splitext(filename)
+        if ext != ".csv" or filename in blacklist:
             continue
-        if filename in blacklist:
+        if int(file[:-4]) in excluded_years:
             continue
         file_path = os.path.join(folder_path, filename)
-        df_list.append(pd.read_csv(file_path))
+        df = pd.read_csv(file_path)
+        if "Weather Station ID" in df.columns:
+            df = df.drop("Weather Station ID", axis=1)
+        df_list.append(df)
     return pd.concat(df_list)
 
 def read_yaml(yaml_file):
