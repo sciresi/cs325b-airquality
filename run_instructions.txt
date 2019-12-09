@@ -1,0 +1,19 @@
+Make sure to read through installation_instructions.txt and
+environment_setup.txt first!
+
+main.sh is the entry point for the preprocessing and training code. The
+following are valid arguments to main.sh:
+
+--skip_preprocessing : Skips all preprocessing and just runs training code.
+--install_gdal : Install GDAL for Python (see installation_instructions.txt)
+--process_sentinel_only : If --skip_preprocessing is not present, then this
+                          flag will skip all preprocessing code except for
+                          the Sentinel-2 images.
+                          
+With no arguments, main.sh will run the entire preprocessing
+stage, and then run training. The preprocessing stage takes a very long time, 
+so it's highly recommended to use the preprocessed files provded in 
+processed_data.tar.gz (see environment_setup.txt), and run main.sh with the
+process_sentinel_only flag when running for the first time. Subsequent 
+training-only runs can obviously include the --skip_preprocessing flag. Make
+sure main.sh is inside the home directory when running!
