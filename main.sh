@@ -87,7 +87,7 @@ echo "Training Nearest Neighbors baseline"
 python code/models/knn_baseline.py
 
 echo "Training Non-Sentinel Net"
-
+python code/models/overfitting_nonsentinel_net.py
 
 echo "Training Sentinel-2 Net"
 python code/models/cnn.py
