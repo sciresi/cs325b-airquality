@@ -18,7 +18,8 @@ es262-airquality/
 There should also be a code/ folder in the home directory as well for both
 the data preprocessing and model training/evaluation stages. 
 
-Included in the .zip file is a processed_data.tar.gz file. When uncompressed, 
+Included in the .zip file is a processed_data.tar.gz file. It can be
+uncompressed by running tar -xf processed_data.tar.gz. When uncompressed, 
 it gives the following directory:
 
 processed_data/
