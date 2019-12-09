@@ -12,6 +12,9 @@ from sklearn import preprocessing
 from sklearn.metrics import mean_squared_error, r2_score, classification_report
 import scipy.stats
 from sklearn import datasets, linear_model
+
+PROCESSED_DATA_FOLDER = "processed_data"
+
 #from torch.utils.data import Dataset, DataLoader
 
 #learning rate of .005 gets decent results on full dataset (training MSE around 8; val MSE close to 10)
@@ -83,8 +86,7 @@ def train_small_net(X_train, X_val, y_train, y_val, under_fifty=True, learning_r
         input_data_batches.append(data_batch)
         y_batch = input_y[int(len(X_train)/num_batches*batch):int(len(X_train)/num_batches*(batch+1))]
         y_batch = y_batch.to(device)
-        print("batch size")
-        print (len(y_batch))
+        
         input_y_batches.append(y_batch)
         
     small_net.to(device)
@@ -165,14 +167,14 @@ def get_data(filename,under_fifty=True,filter_empty_temp=True, single_month = Fa
     df = pandas.read_csv(filename)
     df = df[df['TMAX'].notnull()]
     df = df[df['TMIN'].notnull()]
-    print("before filter")
-    print (df)
+    #print("before filter")
+    #print (df)
     if filter_modis:
         df = df[(df['Blue [0,0]'] !=-1) & (df['Blue [0,1]'] !=-1)
                 & (df['Blue [1,0]']!=-1) & (df['Blue [1,1]'] != -1)
                 & (df['Green [0,0]'] != -1) & (df['Green [0,1]']!=-1)
                 & (df['Green [1,0]'] != -1) & (df['Green [1,1]'] != -1)]
-    print (df)
+    #print (df)
     df['Date'] = pandas.to_datetime(df['Date'])
     if under_fifty:
         df = df[df['Daily Mean PM2.5 Concentration']<20.5]
@@ -240,34 +242,15 @@ def eval(small_net,X,y):
     #plt.xlabel("Real PM2.5 Values (μg/$m^3$')")
     #plt.ylabel("Nonsentinel Net PM2.5 Predictions (μg/$m^3$')")
     #plt.savefig("nonsentinel_real_vs_pred.png")
+if __name__ == "__main__":
+    train_csv = os.path.join(PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")
+    val_csv = os.path.join(PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")  
+    X_val, y_val = get_data(train_csv)
+    X_train, y_train = get_data(val_csv)
 
-X_val, y_val = get_data("./processed_data/val_sites_master_csv_2017.csv")
-X_train, y_train = get_data("./processed_data/train_sites_master_csv_2017.csv")
-
-net = Small_Net()
-#net.load_state_dict(torch.load("best_val_nonsentinel_savepoint"))
-train_small_net(X_train,X_val,y_train,y_val,learning_rate=.005)
-
-"""
-for test_size in [.1,.75, .7, .6, .5]:
-    X_train, y_train = get_data("total_train.csv")
-    X_val, y_val = get_data("total_val.csv")
-
-    print("NOW TRAINING THIS SIZE: "+str(test_size))
-    
-
-    for learning_rate in [.005,.0075,.01,.015,.02,.025]:
-        if learning_rate == .005 or test_size<.92:
-            print("NOW TRAINING THIS SIZE: "+str(test_size)+" AT THIS RATE: "+str(learning_rate))
-            small_net, means, std, train_acc, val_acc = train_small_net(X_train, X_val, y_train, y_val, learning_rate=learning_rate)
-            print(min(train_acc))
-            plt.plot(train_acc,'r--', label = "Training MSE")
-            plt.plot(val_acc,'b--', label = "Validation MSE")
-            plt.legend()
-            plt.savefig("size "+str(test_size)+"rate "+str(learning_rate)+".png")
-            torch.save(small_net.state_dict(), "big_nonsentinel_lr_"+str(learning_rate))
-plt.show()
-plt.clf()"""
+    net = Small_Net()
+    #net.load_state_dict(torch.load("best_val_nonsentinel_savepoint"))
+    train_small_net(X_train,X_val,y_train,y_val,learning_rate=.005)
 
 
 
