@@ -76,17 +76,20 @@ def flatten(l):
     return [num for item in l for num in (item if isinstance(item, list) else (item,))]
 
 def clean_df(df):
-
-    # TODO: add more filtering? change how we replace nans?
+    '''
+    Method to clean the given dataframe. Filters out examples with null min/max 
+    temperatures and null precipitation. Keeps example with null snowfall/snow depth
+    but replaces null values with marker values of -1. Also removes examples missing
+    the matching Sentinel image.
+    '''
     df = df[df['TMAX'].notnull()]
     df = df[df['TMIN'].notnull()]
     df['PRCP'].fillna(-1,inplace=True)
     df['SNOW'].fillna(-1,inplace=True)
     df['SNWD'].fillna(-1,inplace=True)
     df = df[df['PRCP']>-1]
-    #df = df[df['SNOW']>-1]
-    #df = df[df['SNWD']>-1]
     df = df[df['SENTINEL_INDEX'].notnull()]
+    df = df[df[self.epa_df['SENTINEL_INDEX'] != -1]
     
     # Fix indexing
     df = df.rename(columns={'Unnamed: 0': 'Index'}) 
@@ -94,6 +97,11 @@ def clean_df(df):
     return df
 
 def get_epa_features(row, filter_empty_temp=True):
+    '''
+    Method that retrieves the 16 Non-Sentinel features from the given row from the master df, including:
+    lat, lon, month, 4 center blue Modis AOD pixels, 4 center green Modis AOD pixels, precipitation,
+    snow fall, snow depth, min temperature, and max temperature.
+    '''
     date = pd.to_datetime(row['Date'])
     month = date.month
     X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
@@ -104,6 +112,10 @@ def get_epa_features(row, filter_empty_temp=True):
     return X, y
 
 def get_epa_features_no_weather(row, filter_empty_temp=True):
+    '''
+    Method that gets Non-Sentinel features from the given row from the master df, excluding all weather 
+    features.  Includes:    lat, lon, month, 4 center blue AOD pixels, 4 center green AOD pixels.
+    '''
     date = pd.to_datetime(row['Date'])
     month = date.month
     X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
@@ -113,6 +125,11 @@ def get_epa_features_no_weather(row, filter_empty_temp=True):
     return X, y
 
 def get_epa_features_no_snow(row, filter_empty_temp=True):
+    '''
+    Method that gets Non-Sentinel features from the given row from the master df, excluding all two snow 
+    features.  Includes:  lat, lon, month, 4 center blue AOD pixels, 4 center green AOD pixels, precipitation,
+    min. temp, max temp.
+    '''
     date = pd.to_datetime(row['Date'])
     month = date.month
     X = np.array([row['SITE_LATITUDE'],row['SITE_LONGITUDE'], month,
@@ -122,7 +139,6 @@ def get_epa_features_no_snow(row, filter_empty_temp=True):
 
     y = np.array(row['Daily Mean PM2.5 Concentration'])
     return X, y
-
 
 
 def remove_partial_missing_modis(df):
@@ -156,7 +172,7 @@ def remove_missing_sent(full_df):
     "final_sent_mismatch.csv". 
     '''
 
-    to_remove_csv = "/home/sarahciresi/gcloud/cs325b-airquality/data_csv_files/final_sent_mismatch.csv"
+    to_remove_csv = "data_csv_files/final_sent_mismatch.csv"
     to_remove_df = pd.read_csv(to_remove_csv)
     to_remove_df = to_remove_df.rename(columns={"0": "Filename"})
    
@@ -227,13 +243,13 @@ def save_checkpoint(state, is_best, checkpoint):
         checkpoint: (string) folder where parameters are to be saved
     '''
     
-    filepath = os.path.join(checkpoint, 'last_6.pth.tar')
+    filepath = os.path.join(checkpoint, 'last_weights.pth.tar')
     if not os.path.exists(checkpoint):
         print("Checkpoint Directory does not exist! Making directory {}".format(checkpoint))
         os.mkdir(checkpoint)
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'best_6_scratch.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint, 'best_weights.pth.tar'))
 
         
 def load_checkpoint(checkpoint, model, optimizer=None):
@@ -364,7 +380,7 @@ def compute_dataloader_mean_std(dataloader):
     pass
 
 def mse_row(row):
-    '''                                                                                                                                                                                                     
+    '''
     Given a row of a df which is an example of the
     form (index, prediction, label),
     computes the MSE of the example.
@@ -403,7 +419,20 @@ def compute_r2_monthly(predictions_csv):
     r2 = r2_score(labels, predictions)
     pearson = pearsonr(labels, predictions)
     return r2, pearson     
-    
+
+
+def compute_mse(predictions_csv):
+    '''
+    Computes the mean MSE over all predictions in predictions_csv.
+    '''
+    pandarallel.initialize()
+
+    df = pd.read_csv(predictions_csv)
+    mses = df.parallel_apply(mse_row, axis=1)
+    mse = mses.sum()/len(mses)
+
+    return mse
+
 def plot_loss_histogram(predictions_csv):
     '''                                                 
     Takes in .csv created from save_predictions of (indices, predictions, labels)
@@ -416,7 +445,7 @@ def plot_loss_histogram(predictions_csv):
     mses = df.parallel_apply(mse_row, axis=1)
     df['MSE'] = mses
 
-    # compute mean and stdev of MSEs                                                                                                                                                                        
+    # Compute mean and stdev of MSEs                                                                    
     mean_mse = np.mean(mses)
     stddev_mse = np.std(mses)
 
@@ -425,7 +454,7 @@ def plot_loss_histogram(predictions_csv):
     stdev3 = stdev2 + stddev_mse
 
     bins = 100
-    plt.axis([0, 1600, 0, 30]) # really should be number of examples                                                                                                                                        
+
     plt.hist(mses, bins,alpha=.9,label = 'MSE loss')
     min_ylim, max_ylim = plt.ylim()
     plt.axvline(mean_mse, color='k', linestyle='dashed', linewidth=1)
@@ -445,7 +474,6 @@ def plot_loss_histogram(predictions_csv):
     
     above_three_stdv = df[df['MSE']>stdev3]
     sorted_above_three = above_three_stdv.sort_values(by=['Index'])
-    print(sorted_above_three)
     
     
 def get_month(row):
@@ -466,7 +494,6 @@ def resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv="
     pred_df = pd.read_csv(predictions_csv)
 
     new_pred_df = pd.DataFrame(columns=['Index', 'Prediction', 'Label', 'Month' ,'Site ID'])
-    pred_df= pred_df.head(100) ## REMOVE ##                                                                    
     indices = pred_df['Index']
     for index in indices:
         pred_row = pred_df[pred_df['Index']==index]
@@ -492,8 +519,8 @@ def compute_pm_month_average_post(predictions_csv, master_csv, averages_csv="ave
     and predicted_averages.csv, joins the two df, and saves final df with both 
     true and predicted averages.
     '''
-    predicted_avgs_csv = "predicted_avgs_csv.csv"
-    predicted_and_true_avgs_csv = "predicted_and_true_avgs_csv.csv"
+    predicted_avgs_csv = "test1617_predicted_avgs_csv.csv"
+    predicted_and_true_avgs_csv = "test1617_pred_and_true_avgs.csv"  
 
     master_df = pd.read_csv(master_csv)
     averages_df = pd.read_csv(averages_csv)
@@ -589,10 +616,13 @@ def get_month_average(epa_row):
 
 
 def add_pm_month_average(master_csv):
-
+    '''
+    Adds monthly averages column to dataframe stored in master_csv, 
+    and saves to new csv for use in post-prediction monthly average aggregation.
+    '''
     pandarallel.initialize()
 
-    averages_csv = "averages.csv"
+    averages_csv = "test_averages.csv"
 
     master_df = pd.read_csv(master_csv)
     months = master_df.parallel_apply(get_month, axis=1)
@@ -603,13 +633,15 @@ def add_pm_month_average(master_csv):
 
     combined = master_df.join(average_df, on=["Site ID", "Month"], how='left')
   
-    save_to = "master_csv_with_averages.csv"
+    save_to = "test1617_csv_with_averages.csv"
     combined.to_csv(save_to)
 
 
 
-def average_analysis(averages_csv):
-
+def month_average_analysis(averages_csv):
+    '''
+    Method that computes the mean monthly PM2.5 average over all sites. 
+    '''
     average_df = pd.read_csv(averages_csv)
     for month in range(1, 13):
         month_df = average_df[average_df['Month']== month]
@@ -647,25 +679,23 @@ def plot_predictions_histogram(predictions_csv, model_name, dataset='val'):
     df = pd.read_csv(predictions_csv)
     predictions = df['Prediction']
     labels = df['Label']
-    bins = 75
+    bins = 50
    
-    #plt.axis([0, 200, -10, 300]) # really should be number of examples                                                                                                                                        
-    plt.hist(predictions, bins, alpha=.9,label = 'Predictions')
-    plt.hist(labels, bins, alpha=.9,label = 'Labels')
-    plt.xlabel("Prediction/Target Value")
+    plt.hist(predictions, bins, alpha=.95,label = 'Predictions', color='cadetblue')
+    plt.hist(labels, bins, alpha=.8,label = 'Labels', color='darkseagreen')
+    plt.xlabel("Prediction/Ground Truth Value")
     plt.ylabel("Frequency")
-    plt.title("Histograms of Predicted Values versus Ground Truth Labels on Test Data: " + model_name, fontsize=16)
+    plt.title("Histograms of Predicted PM2.5 Values versus Ground \nTruth Labels on Test Data: " + model_name, fontsize=15)
     plt.legend()
     plt.savefig("plots/"+dataset+"_" + model_name + "_predictions_hist.png")
     plt.show()
 
     
-    
-def highest_loss_analysis(predictions_csv):
+def highest_loss_analysis_via_outliers(predictions_csv):
     '''                                                 
-    Takes in .csv created from save_predictions of (indices, predictions, labels, site id, month),
+    Takes in predictions csv of the form:  (indices, predictions, labels, site id, month, state),
     for each example, and calculates MSE of each example.     
-    Then determines examples with highest losses, and looks for trends. 
+    Then determines examples with highest losses, based on month/site ID, to investigate trends. 
     '''
     pandarallel.initialize()
 
@@ -686,13 +716,13 @@ def highest_loss_analysis(predictions_csv):
     above_three_stdv = df[df['MSE']>stdev3]
     sorted_above_three = above_three_stdv.sort_values(by=['Index'])
     
-    category = 'Site ID' # or Month
+    category = 'Month'  # or 'Site ID'
     category_outliers = above_three_stdv[category]
     unique_values = pd.unique(category_outliers)   #i.e. unique sites / unique months
     num_unique = len(unique_values)
 
     plt.hist(sites, num_unique, alpha=.9,label = 'Highest Loss examples by '+ category)
-    plt.title('Highest Loss examples by '+ category ,fontname="Georgia", fontsize=16)
+    plt.title('Highest Loss examples by '+ category , fontsize=16)
     plt.xlabel(category, fontname="Times New Roman", fontsize=12)
     plt.ylabel('Frequency',fontname="Times New Roman", fontsize=12)
     plt.savefig("plots/highest_losses_by_" + category + ".png")
@@ -700,8 +730,7 @@ def highest_loss_analysis(predictions_csv):
     
     n = 5 # Top 5 most fq sites most informative; 4 most fq months most informative
     most_fq_in_category = category_outliers.value_counts()[:n].index.tolist()  # Top 5 most fq sites most informative
-    print(most_fq_in_category)
-    print(category_outliers.mode()) # or for just one top-most frequent     
+    return most_fq_in_category
 
     
 def get_outlier_info(master_csv):
@@ -709,25 +738,56 @@ def get_outlier_info(master_csv):
     Look up information of an outlier found from highest_loss_analysis function
     '''
     
-    site_id = 60371201 # CA
+    site_id = 60371201 
     df = pd.read_csv(master_csv)
 
     site_points = df[df['Site ID'] == site_id]
     twenty = site_points.head(20)                                                             
     most_fq_months = site_points['Month'].value_counts()[:12].index.tolist()
 
-    preds_csv = "/Users/sarahciresi/Downloads/newest_combined_val_epoch_14.csv"
+    preds_csv = "predictions/newest_combined_val_epoch_14.csv"
     preds_df = pd.read_csv(preds_csv)
     preds_at_site = preds_df[preds_df['Site ID'] == site_id]
-    print(preds_at_site)
+    return preds_at_site
 
-def get_mean_mse(predictions_csv):
+
+def highest_loss_analysis(predictions_csv, model_name):
+    '''                                                 
+    Takes in predictions .csv of the form: (indices, predictions, labels, site id, month, state),
+    for each example, and calculates MSE of each example.     
+    Plots losses vs. month/state to investigate trends. 
+    '''
     pandarallel.initialize()
-
+    plt.clf()
     df = pd.read_csv(predictions_csv)
     mses = df.parallel_apply(mse_row, axis=1)
     df['MSE'] = mses
+    df = df.groupby('State', as_index=False)['MSE'].mean()  # Or 'Month'
+ 
+    # 44 states; Does not include ak, nd, dc, ri , hi, md
+    states = ['AL','AZ','AR','CA','CO','CT','DE','FL','GA','ID','IL','IN','IA','KS','KY','LA','ME',
+              'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','OH','OK','OR','PA',
+              'SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
+    
+    state_colors_multi_modal = ['b','b','b','r','b','r','b','b','b','r','b','b','r','b','b','b','b',
+              'b','b','b','b','b','r','b','b','b','b','b','b','b','b','b','b','r',
+              'b','b','b','b','b','b','b','b','b','b','b']
 
-    # Compute mean and stdev of MSEs
-    mean_mse = np.mean(mses)
-    return mean_mse
+    state_colors_knn = ['r','b','b','r','r','r','b','b','b','r','b','b','b','b','b','b','b',
+                  'b','b','b','b','b','r','b','b','b','b','b','b','b','b','b','b','b',
+                  'b','b','b','b','b','b','b','b','b','b','b']
+    r = 'firebrick'
+    g = 'darkseagreen'
+    months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    month_colors = [r,r,g,g,g,g,g,g,g,g,r,r]  
+    
+    plt.xlabel("State",fontsize=14)
+    plt.ylabel("Average Mean Squared Error")
+    plt.xticks(np.arange(0,44), states, rotation='vertical', fontsize=10)
+
+    plt.title("Average Mean Squared Error By State")
+    plt.bar(states, df['MSE'], color=state_colors_knn)
+    ##plt.bar(months, df['MSE'], color=month_colors)                                                                                                    
+    plt.savefig("plots/avg_losses_by_state_"+ model_name +".png")
+    plt.show()
+    

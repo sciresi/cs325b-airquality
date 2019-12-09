@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import time
 import pandas
@@ -13,9 +14,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
-from dataloader import load_data, load_data_new
 from pandarallel import pandarallel
 from tensorboardX import SummaryWriter
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from dataloader import load_data_new
 import utils
 
 
@@ -167,9 +169,9 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
                                        "predictions/combined_train_1617_epoch_" + str(epoch) + ".csv") 
             
-            writer.add_scalar('train/loss', loss, t_global_step)
-            writer.add_scalar('train/r2', r2, t_global_step)
-            t_global_step += 1
+            #writer.add_scalar('train/loss', loss, t_global_step)
+            #writer.add_scalar('train/r2', r2, t_global_step)
+            #t_global_step += 1
 
             del inputs, features, labels, outputs
             torch.cuda.empty_cache()
@@ -235,9 +237,9 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
                 t.set_postfix(loss=loss_str, r2=r2_str) 
                 t.update()
                 
-                writer.add_scalar('val/loss', loss, v_global_step)
-                writer.add_scalar('val/r2', r2, v_global_step)
-                v_global_step +=1
+                #writer.add_scalar('val/loss', loss, v_global_step)
+                #writer.add_scalar('val/r2', r2, v_global_step)
+                #v_global_step +=1
 
                 del inputs, features, labels, outputs
                 torch.cuda.empty_cache()
@@ -419,10 +421,16 @@ def run_test():
     Runs final evaluation on the test set.   
     '''
  
-    npy_dir = "es262-airquality/sentinel/"
-    train_csv = "processed_data/train_sites_master_csv_2016_2017.csv"
-    test_csv = "processed_data/test_sites_master_csv_2016_2017.csv"
+    npy_dir = "cs325b/images/s2" # utils.SENTINEL_FOLDER
+    train_csv = utils.PROCESSED_DATA_FOLDER + "train_sites_master_csv_2016_2017.csv"
+    test_csv = utils.PROCESSED_DATA_FOLDER + "test_sites_master_csv_2016_2017.csv"
     checkpt_dir = "checkpoints/end_to_end/"   
+    
+    lr = 0.00001
+    reg = 5e-2    
+    batch_size = 90
+    num_epochs = 150
+    num_train = 308132 
     
     dataloaders = load_data_new(train_csv, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
@@ -443,5 +451,5 @@ def run_test():
     
 if __name__ == "__main__":
     
-    run_train()
-    ## run_test()
+    ## run_train()
+    run_test()
