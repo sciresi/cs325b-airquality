@@ -115,7 +115,7 @@ def clean_df(df):
     df['SNWD'].fillna(-1,inplace=True)
     df = df[df['PRCP']>-1]
     df = df[df['SENTINEL_INDEX'].notnull()]
-    df = df[df[self.epa_df['SENTINEL_INDEX'] != -1]
+    df = df[df['SENTINEL_INDEX'] != -1]
     
     # Fix indexing
     df = df.rename(columns={'Unnamed: 0': 'Index'}) 

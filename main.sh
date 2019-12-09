@@ -62,5 +62,43 @@ then
     python code/data_processing.py --tif_to_npy
 fi
 
+if [ ! -d "predictions" ]
+then
+echo "Creating predictions folder"
+mkdir predictions
+fi
+
+if [ ! -d "plots" ]
+then
+echo "Creating plots folder"
+mkdir plots
+fi
+
+if [ ! -d "checkpoints" ]
+then
+echo "Creating checkpoints folder"
+mkdir checkpoints
+fi
+
 echo "Begin training phase..."
-# TRAINING CODE HERE    
+# TRAINING CODE HERE   
+
+echo "Training Nearest Neighbors baseline"
+python code/models/knn_baseline.py
+
+echo "Training Non-Sentinel Net"
+
+
+echo "Training Sentinel-2 Net"
+python code/models/cnn.py
+
+echo "Training Frozen Multi-Modal Net"
+
+
+echo "Training Finetuned Multi-Modal Net"
+
+
+echo "Training End-to-end Multi-Modal Net"
+python code/models/cnn_combined.py
+
+

@@ -1,8 +1,10 @@
 import os
+import sys
 import csv
 import time
 import pandas
 import random
+import datetime
 import numpy as np
 from tqdm import tqdm
 import torch
@@ -11,14 +13,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from sklearn.metrics import r2_score
-#import matplotlib
-#matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from dataloader import load_data, load_data_new
 from pandarallel import pandarallel
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from dataloader import load_data_new
 import utils
 
 class Small_CNN(nn.Module):
+    '''
+    Sentinel-2 CNN
+    '''
     def __init__(self, device = "cpu"):
         super(Small_CNN, self).__init__()
 
@@ -103,8 +107,8 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
         
         for i, sample in enumerate(dataloader):
 
-            indices, inputs, labels = sample['index'], sample['image'], sample['label']
-            sites, dates = sample['site'], sample['month']
+            indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
+            sites, dates, states = sample['site'], sample['month'], sample['state']
             
             # Move to GPU if available       
             inputs = inputs.to(model.device, dtype=torch.float)
@@ -118,8 +122,6 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            #if scheduler != None:
-            #    scheduler.step()
                 
             # Move to cpu and convert to numpy
             outputs = outputs.data.cpu().numpy()
@@ -141,7 +143,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             if epoch % 20 == 0:
             # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
-                utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
+                utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
                                        "predictions/cnn_train_preds_epoch_" + str(epoch) + ".csv") 
          
             del inputs, labels, outputs
@@ -173,9 +175,9 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
         with torch.no_grad():
             for i, sample in enumerate(dataloader):
 
-                indices, inputs, labels = sample['index'], sample['image'], sample['label']
-                sites, dates = sample['site'], sample['month']
-                    
+                indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
+                sites, dates, states = sample['site'], sample['month'], sample['state']
+    
                 # Move to GPU if available       
                 inputs = inputs.to(model.device, dtype=torch.float)
                 labels = labels.to(model.device, dtype=torch.float)
@@ -188,10 +190,11 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
                 outputs = outputs.data.cpu().numpy()
                 labels = labels.data.cpu().numpy()
                 indices = indices.data.cpu().numpy()
+                sites, dates = sites.data.cpu().numpy(), dates.data.cpu().numpy()
 
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
-                utils.save_predictions(indices, outputs, labels, sites, dates, curr_batch_size, 
+                utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
                                        "predictions/cnn_val_preds_epoch_" + str(epoch) + ".csv") 
  
                 # Save metrics
@@ -291,59 +294,86 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
 
 
     # Evaluate on validation or test set
-    epoch = "all_val_threshold"
+    epoch = "final"
     mean_metrics = evaluate(model, loss_fn, dataloader, batch_size, epoch)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
     
-    
-if __name__ == "__main__":
-    
-    npy_dir = '/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2/'
-    checkpt_dir = "/home/sarahciresi/gcloud/cs325b-airquality/checkpt_small_cnn/"
-    train_csv = "data_csv_files/train_sites_master_csv_2016.csv"
-    val_csv = "data_csv_files/val_sites_master_csv_2016.csv"
-   
-    lr = 0.00002
-    reg = 5e-2
-    batch_size = 90
-    num_epochs = 20 
-    num_train = 107376 #154665
 
-    print("Training for {} epochs with batch size: {}, lr: {}, reg: {} using {} training examples.".format(num_epochs, batch_size, lr, reg, num_train))
+def run_train():
+    '''
+    Runs the whole training process.
+    '''
     
+    npy_dir = utils.SENTINEL_FOLDER 
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    val_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    checkpt_dir = "checkpoints/sentinel_cnn/"
+    
+    lr = 0.00001
+    reg = 1e-5
+    batch_size = 64
+    num_epochs = 100 
+    num_train = 107376 
+    
+    print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
+   
     dataloaders = load_data_new(train_csv, batch_size = batch_size, 
-                                sample_balanced=True, num_workers=8,
+                                sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, val_images=npy_dir, 
                                 val_nonimage_csv=val_csv)    
     
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = Small_CNN(device)
+    model.to(device)
+
+    model._set_seeds(0)
+    model.apply(model.init_weights)
+    optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
+        
+    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
+                       batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
+                       model_dir = checkpt_dir)
+    
+    
+def run_test():
+    '''
+    Runs final evaluation on the test set.   
+    '''
+ 
+    npy_dir = utils.SENTINEL_FOLDER 
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    checkpt_dir = "checkpoints/sentinel_cnn/"    
+    
+    lr = 0.00001
+    reg = 1e-5
+    batch_size = 64
+    num_epochs = 100 
+    num_train = 308132 
+    
+    dataloaders = load_data_new(train_csv, batch_size = batch_size, 
+                                sample_balanced=False, num_workers=8,
+                                train_images=npy_dir, test_images=npy_dir, 
+                                test_nonimage_csv=test_csv)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Small_CNN(device) 
+    model = Small_CNN(device)
     model.to(device)
+
     model._set_seeds(0)
     model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
     
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
-                      batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, model_dir = checkpt_dir)     
-   
-    '''
-    predict(model, nn.MSELoss(), dataloaders['train'], batch_size=batch_size, num_epochs=num_epochs, 
-            dataset='train', model_dir=checkpt_dir, saved_weights_file="weights")
-                       
+    predict(model, nn.MSELoss(), dataloaders['test'], batch_size, num_epochs, 
+            dataset='test', model_dir=checkpt_dir, saved_weights_file="best_weights")
     
     
-    preds="predictions/cnn_val_preds_epoch_all_val_threshold.csv"
-    monthly_preds = "predicted_and_true_avgs_csv.csv"
-    r2, pearson = utils.compute_r2(preds) 
-    print(r2)
-    print(pearson)
+if __name__ == "__main__":
     
-    utils.compute_pm_month_average_post(preds, cleaned_csv, averages_csv="averages.csv")
-    utils.plot_predictions(preds)
-    r2, pearson = utils.compute_r2_monthly("predicted_and_true_avgs_csv.csv")
-    '''
+    run_train()
+    ## run_test()
     
     
   

@@ -9,9 +9,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from sklearn.utils import shuffle
-import utils
 from pandarallel import pandarallel 
-
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import utils
 
 class NearestNeighborBaseline():
     '''
@@ -202,8 +202,8 @@ def run_baseline():
     and plots the predictions.
     '''
     
-    train_csv = "processed_data/train_sites_master_csv_2016_2017.csv"
-    test_csv = "processed_data/test_sites_master_csv_2016_2017.csv"
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
     predictions_csv = "predictions/knn_predictions_new.csv"
     
     model = NearestNeighborBaseline(train_csv=train_csv)
@@ -212,8 +212,8 @@ def run_baseline():
     all_y_test, all_y_pred, all_dists, all_states, all_months, r2, pearson, MSE = model.predict(test_csv=test_csv)
     save_predictions(all_y_test, all_y_pred, all_dists, all_months, all_states, predictions_csv)
     
-    utils.plot_predictions(predictions_csv, "Nearest Neighbor Baseline")
-    pearson = plot_mse_vs_dist(predictions_csv)
+    ## utils.plot_predictions(predictions_csv, "Nearest Neighbor Baseline")
+    ## pearson = plot_mse_vs_dist(predictions_csv)
 
     
 if __name__ == "__main__":

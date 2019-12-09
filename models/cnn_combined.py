@@ -380,11 +380,11 @@ def run_train():
     Runs the whole training process.
     '''
     
-    npy_dir = "es262-airquality/sentinel/"   
-    train_csv = "processed_data/train_sites_master_csv_2016_2017.csv"
-    val_csv = "processed_data/val_sites_master_csv_2016_2017.csv"
-    test_csv = "processed_data/test_sites_master_csv_2016_2017.csv"
-    checkpt_dir = "checkpoints/end_to_end/" 
+    npy_dir = utils.SENTINEL_FOLDER 
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    val_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    checkpt_dir = "checkpoints/end_to_end/"
     
     log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     writer = SummaryWriter() 
@@ -421,10 +421,10 @@ def run_test():
     Runs final evaluation on the test set.   
     '''
  
-    npy_dir = "cs325b/images/s2" # utils.SENTINEL_FOLDER
-    train_csv = utils.PROCESSED_DATA_FOLDER + "train_sites_master_csv_2016_2017.csv"
-    test_csv = utils.PROCESSED_DATA_FOLDER + "test_sites_master_csv_2016_2017.csv"
-    checkpt_dir = "checkpoints/end_to_end/"   
+    npy_dir = utils.SENTINEL_FOLDER 
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    checkpt_dir = "checkpoints/end_to_end/"    
     
     lr = 0.00001
     reg = 5e-2    
@@ -451,5 +451,5 @@ def run_test():
     
 if __name__ == "__main__":
     
-    ## run_train()
-    run_test()
+    run_train()
+    ## run_test()
