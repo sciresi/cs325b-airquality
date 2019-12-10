@@ -365,33 +365,33 @@ def split_data_by_site(master_csv):
     
 
 class EmbeddingDataset(Dataset):
-    
     def __init__(self, labels_path, ns_labels_path, s_labels_path, embeddings_path):
         self.labels = np.load(labels_path)
         self.embeddings = np.load(embeddings_path)
         self.ns_labels = np.load(ns_labels_path)
         self.s_labels = np.load(s_labels_path)
-        
     def __len__(self):
         return self.labels.size
-    
     def __getitem__(self, idx):
         label = self.labels[idx]
         embed = self.embeddings[idx]
+        #embed = 0
         return {'pm':label,'embed':embed,'ns_pred':self.ns_labels[idx],'s_pred':self.s_labels[idx]}
 
-def load_embeddings(labels_path, ns_labels_path, s_labels_path, embeddings_path,batch_size):
-    dataset = EmbeddingDataset(labels_path, ns_labels_path, s_labels_path, embeddings_path)
-    full_ds_size = len(dataset) 
-    indices = list(range(full_ds_size))
-    split1, split2 = 64*240,64*300
-    train_indices, val_indices, test_indices = indices[:split1], indices[split1:split2], indices[split2:]
-    train_sampler = SubsetRandomSampler(train_indices)
-    val_sampler = SubsetRandomSampler(val_indices)
-    test_sampler = SubsetRandomSampler(test_indices)
-    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=train_sampler, num_workers=4)
-    val_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=val_sampler, num_workers=2)
-    test_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
+def load_embeddings(labels_path_train, ns_labels_path_train, s_labels_path_train, embeddings_path_train,
+                    labels_path_val, ns_labels_path_val, s_labels_path_val, embeddings_path_val, batch_size,
+                    labels_path_test=None, ns_labels_path_test=None, s_labels_path_test=None, embeddings_path_test=None):
+    train_dataset = EmbeddingDataset(labels_path_train, ns_labels_path_train, s_labels_path_train, embeddings_path_train)
+    val_dataset = EmbeddingDataset(labels_path_val, ns_labels_path_val, s_labels_path_val, embeddings_path_val)
+    if labels_path_test:
+        test_dataset = EmbeddingDataset(labels_path_test, ns_labels_path_test, s_labels_path_test, embeddings_path_test)
+        test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, sampler=test_sampler, num_workers=0)
+    else:
+        test_dataloader = None
+
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
     
     dataloaders = { 'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
     
