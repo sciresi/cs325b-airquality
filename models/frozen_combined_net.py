@@ -283,7 +283,7 @@ if __name__ == "__main__":
 
     #TODO: FIX THIS ONE
     cnn_net = cnn.Small_CNN()
-    saved_weights_path = "checkpoints/sentinel_cnn/last_weights.pth.tar"
+    saved_weights_path = "checkpoints/sentinel_cnn/best_weights.pth.tar"
     print("Restoring parameters from {}".format(saved_weights_path))
     utils.load_checkpoint(saved_weights_path, cnn_net)
     cnn_net.to(device)
