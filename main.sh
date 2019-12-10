@@ -93,9 +93,10 @@ echo "Training Sentinel-2 Net"
 python code/models/cnn.py
 
 echo "Training Frozen Multi-Modal Net"
-
+python code/models/frozen_combined_net.py
 
 echo "Training Finetuned Multi-Modal Net"
+python code/models/finetuned_combined_net.py
 
 
 echo "Training End-to-end Multi-Modal Net"
