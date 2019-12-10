@@ -17,3 +17,19 @@ processed_data.tar.gz (see environment_setup.txt), and run main.sh with the
 process_sentinel_only flag when running for the first time. Subsequent 
 training-only runs can obviously include the --skip_preprocessing flag. Make
 sure main.sh is inside the home directory when running!
+
+main.sh also creates three additional subdirectories in the home directory:
+'predictions/', 'plots/', and 'checkpoints/', which hold model prediction 
+files, plots/figures, and saved model weights, respectively.
+
+The 6 relevant models files (located in code/models/) that will be invoked are: 
+    1) knn_baseline.py                  -- Nearest Neighbors Baseline model
+    2) overfitting_nonsentinel_net.py   -- Non-Sentinel Net
+    3) cnn.py                           -- Sentinel-2 Net
+    4) frozen_combined_net.py           -- Frozen Pretrained Multi-Modal Net
+    5) finetuned_combined_net.py        -- Finetuned Pretrained Multi-Modal Net
+    6) cnn_combined.py                  -- End-to-End Multi-Modal Net
+
+These are already invoked in main.sh, but we wanted to name them explicitly, since
+there are a few additional files in models/ that are not used. These 6 models
+can be run individually, if needed (look in main.sh to see how they are invoked). 

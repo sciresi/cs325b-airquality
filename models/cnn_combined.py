@@ -15,7 +15,6 @@ from torch.autograd import Variable
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 from pandarallel import pandarallel
-from tensorboardX import SummaryWriter
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataloader import load_data_new
 import utils
@@ -366,9 +365,9 @@ def weighted_mse_loss(inputs, targets, global_cnt, dataset):
     loss_middle = torch.sum(1 *(middle_inputs - middle_targets) ** 2)   
     loss_above = torch.sum(10 *(above_13_inputs - above_13_targets) ** 2) 
 
-    writer.add_scalar(dataset+"/loss_low", loss_below, global_cnt )
-    writer.add_scalar(dataset+"/loss_mid", loss_middle, global_cnt)
-    writer.add_scalar(dataset+"/loss_high", loss_above, global_cnt)
+    #writer.add_scalar(dataset+"/loss_low", loss_below, global_cnt )
+    #writer.add_scalar(dataset+"/loss_mid", loss_middle, global_cnt)
+    #writer.add_scalar(dataset+"/loss_high", loss_above, global_cnt)
     
     loss = (loss_above + loss_middle + loss_below)/batch_size
        
@@ -386,9 +385,6 @@ def run_train():
     test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
     checkpt_dir = "checkpoints/end_to_end/"
     
-    log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    writer = SummaryWriter() 
-
     lr = 0.00001
     reg = 5e-2    
     batch_size = 90
@@ -414,8 +410,6 @@ def run_train():
                        batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
                        model_dir = checkpt_dir)
     
-    writer.close()
-
 def run_test():
     '''
     Runs final evaluation on the test set.   

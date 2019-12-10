@@ -225,7 +225,7 @@ def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataload
     Trains the model and evaluates at every epoch
     '''
 
-    best_val_r2 = 0.0
+    best_val_r2 = -1.0
     all_train_losses, all_val_losses, all_train_r2, all_val_r2 = [], [], [], []
     
     # If a saved weights file for the model is specified, reload the weights
