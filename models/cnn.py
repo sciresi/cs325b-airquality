@@ -69,11 +69,12 @@ class Small_CNN(nn.Module):
         x = self.drop(x)
         x = x.reshape(x.size(0), 256 * 8 * 8) 
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        embed = self.fc2(x)
+        x = F.relu(embed)
         x = self.fc3(x)
         x = x.reshape(-1)
         
-        return x
+        return x,embed
     
     def init_weights(self, m):
         if type(m) == nn.Conv2d or type(m) == nn.Linear:
@@ -115,7 +116,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             labels = labels.to(model.device, dtype=torch.float)
 
             # Forward pass and calculate loss
-            outputs = model(inputs)
+            outputs,_ = model(inputs)
             loss = loss_fn(outputs, labels)
 
             # Compute gradients and perform parameter updates
@@ -183,7 +184,7 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
                 labels = labels.to(model.device, dtype=torch.float)
 
                 # Forward pass and calculate loss
-                outputs = model(inputs)
+                outputs,_ = model(inputs)
                 loss = loss_fn(outputs, labels)
 
                 # Move to cpu and convert to numpy
