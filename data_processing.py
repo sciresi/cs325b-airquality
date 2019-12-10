@@ -378,6 +378,8 @@ def main(argv):
     if "--tif_to_npy" in argv:
         print("Saving all .tifs to .npy")
         save_all_sentinel_npy(utils.SENTINEL_FOLDER, NUM_FOLDER_THREADS, NUM_SAVING_THREADS)
+    if "--sentinel_only":
+        return
     print("Loading dataframes...")
     epa_df = utils.get_epa(utils.EPA_FOLDER, year = "any")
     print("Loading Sentinel dates...")

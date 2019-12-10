@@ -1,7 +1,8 @@
 preprocess_data=true
 install_gdal=false
+sentinel_only=false
 
-options=$(getopt -o : --long skip_preprocessing,skip_gdal_install -- "$@")
+options=$(getopt -o : --long skip_preprocessing,skip_gdal_install,process_sentinel_only -- "$@")
 eval set -- "$options"
 while true; do
     case "$1" in
@@ -13,6 +14,11 @@ while true; do
 	--install_gdal)
 	    echo "Will attempt installing GDAL!"
 	    install_gdal=true
+	    shift
+	    ;;
+    --process_sentinel_only)
+	    echo "Will only process sentinel data!"
+	    sentinel_only=true
 	    shift
 	    ;;
 	--)
@@ -40,26 +46,32 @@ fi
 
 if [ "$preprocess_data" = true ]
 then
-    echo "Running preprocessing stage, could take a while..."
-    if [ ! -d "processed_data" ]
+    if [ "$sentinel_only" = true ]
     then
-	echo "Creating processed_data folder"
-	mkdir processed_data
-    fi
-    
-    if [ ! -d "es262-airquality/GHCND_weather/ghcnd_hcn" ]
-    then
-	echo "Untarring ghcnd_hcn.tar.gz into ghcnd_hcn..."
-	cd es262-airquality/GHCND_weather/ && tar -xf ghcnd_hcn.tar.gz && cd
-    fi
+        echo "Only processing Sentinel-2 images..."
+        python code/data_processing.py --tif_to_npy --sentinel-only
+    else
+        echo "Running preprocessing stage, could take a while..."
+        if [ ! -d "processed_data" ]
+        then
+        echo "Creating processed_data folder"
+        mkdir processed_data
+        fi
 
-    if [ ! -d "es262-airquality/GHCND_weather/relevant_ghc" ]
-    then
-	echo "Creating relevant_ghc folder"
-	mkdir es262-airquality/GHCND_weather/relevant_ghc
+        if [ ! -d "es262-airquality/GHCND_weather/ghcnd_hcn" ]
+        then
+        echo "Untarring ghcnd_hcn.tar.gz into ghcnd_hcn..."
+        cd es262-airquality/GHCND_weather/ && tar -xf ghcnd_hcn.tar.gz && cd
+        fi
+
+        if [ ! -d "es262-airquality/GHCND_weather/relevant_ghc" ]
+        then
+        echo "Creating relevant_ghc folder"
+        mkdir es262-airquality/GHCND_weather/relevant_ghc
+        fi
+        python code/epa_to_ghcnd_weather.py 
+        python code/data_processing.py --tif_to_npy
     fi
-    python code/epa_to_ghcnd_weather.py 
-    python code/data_processing.py --tif_to_npy
 fi
 
 if [ ! -d "predictions" ]
