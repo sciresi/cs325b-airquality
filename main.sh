@@ -58,7 +58,7 @@ then
 	echo "Creating relevant_ghc folder"
 	mkdir es262-airquality/GHCND_weather/relevant_ghc
     fi
-
+    python code/epa_to_ghcnd_weather.py 
     python code/data_processing.py --tif_to_npy
 fi
 
@@ -81,7 +81,6 @@ mkdir checkpoints
 fi
 
 echo "Begin training phase..."
-# TRAINING CODE HERE   
 
 echo "Training Nearest Neighbors baseline"
 python code/models/knn_baseline.py

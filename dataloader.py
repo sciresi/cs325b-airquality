@@ -10,6 +10,7 @@ import sys
 from DataVisualization.read_tiff import save_sentinel_from_eparow
 import pdb
 import utils
+import random
 
 BATCH_SIZE = 32
 MIN_PM_VALUE = -9.7
@@ -336,17 +337,19 @@ def split_data_by_site(master_csv):
     For future years data, will use same site split - so need to edit as appropriate.
 
     '''
-    all_data = pd.read_csv(master_csv)
-    all_data = utils.clean_df(all_data)
+    #all_data = pd.read_csv(master_csv)
+    all_data = utils.clean_df(master_csv)
     epa_stations = all_data['Site ID'].unique()
     epa_stations = epa_stations.tolist()
     num_sites = len(epa_stations)  # used to compute indices for 60/20/20 split 
-    '''
+    
     random.shuffle(epa_stations)
-    train_sites = epa_stations[:690]
-    val_sites = epa_stations[690:920]
-    test_sites = epa_stations[920:]
-    '''
+    train_end = int(num_sites * 0.6)
+    val_end = train_end + int(num_sites * 0.2)
+    train_sites = epa_stations[:train_end]
+    val_sites = epa_stations[train_end:val_end]
+    test_sites = epa_stations[val_end:]
+    
     ## in future, instead of above, change to split 
     ##based on .unique 'Site ID' rows from train_site_2016, etc.
     ## e.g.:
@@ -359,9 +362,14 @@ def split_data_by_site(master_csv):
     val_data = all_data[all_data['Site ID'].isin(val_sites)]
     test_data = all_data[all_data['Site ID'].isin(test_sites)]
     
-    train_data.to_csv("train_sites_master_csv_2016.csv")
-    val_data.to_csv("val_sites_master_csv_2016.csv")
-    test_data.to_csv("test_sites_master_csv_2016.csv")
+    
+    train_path = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")
+    val_path = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
+    test_path = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    
+    train_data.to_csv(train_path)
+    val_data.to_csv(val_path)
+    test_data.to_csv(test_path)
     
 
 class EmbeddingDataset(Dataset):

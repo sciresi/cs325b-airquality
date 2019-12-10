@@ -15,9 +15,9 @@ from os import listdir
 from os.path import isfile, join
 import collections
 import sys
-sys.path.insert(0, '/home/sarahciresi/gcloud/cs325b-airquality/DataVisualization')
-sys.path.insert(0, '/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/DataVisualization')
-from  modis_vis_with_epa import get_modis_means, get_epa, epa_to_modis_file_name
+import utils
+
+
 
 data_header_names = [
         "ID",
@@ -86,8 +86,8 @@ def epa_to_closest_weather_station(directory):
     
     prefix = "closest_weather_stations_"
     postfix = ".csv"
-    years = ['2016', '2017', '2018', '2019']
-    filenames = [ (directory + prefix + year + postfix) for year in years]
+    years = ['2016', '2017'] #, '2018', '2019']
+    filenames = [ os.path.join(directory, prefix + year + postfix) for year in years]
 
     for idx, f in enumerate(filenames): 
         with open(f) as csvfile:
@@ -109,8 +109,7 @@ def epa_to_closest_weather_station(directory):
                     #assert(weather_st_to_years_data[weather_station_id][1] >= year)
                 line_count += 1
         csvfile.close()
-                                                                                                                                      
-  
+                                                                                                                
 def weather_station_to_years_of_data(directory):
     ''' Processes all_weather_stations_yyyy.csv files to determine the years of data
     available for the weather stations.  Used to confirm that we have the necessary 
@@ -121,7 +120,7 @@ def weather_station_to_years_of_data(directory):
     '''
     prefix = "all_weather_stations_"
     postfix = ".csv"
-    years = ['2016', '2017', '2018', '2019']
+    years = ['2016', '2017'] #, '2018', '2019']
     filenames = [ (directory + prefix + year + postfix) for year in years]
     for idx, f in enumerate(filenames): 
         with open(f) as csvfile:
@@ -142,7 +141,7 @@ def weather_station_to_years_of_data(directory):
     np.save('weather_station_years_data.npy', weather_st_to_years_data)
 
 
-def read_ghcn_data_file(directory, filename, elements=None, include_flags=False, dropna='all'):
+def read_ghcn_data_file(directory, filename, save_dir, elements=None, include_flags=False, dropna='all'):
     ''' Reads in weather data from a GHCN .dly data file in the given directory with the 
     given filename into a pandas dataframe. Can specify a list of elements to include in the DF 
     via elements, otherwise all are included.
@@ -150,7 +149,7 @@ def read_ghcn_data_file(directory, filename, elements=None, include_flags=False,
     '''
     
     df = pd.read_fwf(
-        directory+filename,
+        os.path.join(directory, filename),
         colspecs=data_header_col_specs + data_col_specs,
         names=data_header_names + data_col_names,
         index_col=data_header_names,
@@ -179,8 +178,6 @@ def read_ghcn_data_file(directory, filename, elements=None, include_flags=False,
     df.index.name = "Date"
     df.index = df.index.strftime('%m/%d/%Y')
     
-    #save_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/GHCND_weather/relevant_ghc/"
-    save_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/relevant_ghc/"
     csv_filename =  filename[:11] + ".csv"
     df.to_csv(save_dir + csv_filename,  encoding='utf-8')
 
@@ -188,7 +185,7 @@ def read_ghcn_data_file(directory, filename, elements=None, include_flags=False,
         
 
 
-def save_relevant_weather_data(data_dir):
+def save_relevant_weather_data(data_dir, save_dir):
     '''
     Loops through all the relevant weather stations, which are stored in closest_weather_stations,
     and saves the reformated .csv versions of the original data in a new directory that will be
@@ -200,11 +197,11 @@ def save_relevant_weather_data(data_dir):
         if idx % 100 == 0:
             print("File {}\{}".format(idx, len(closest_weather_stations)))
         filename = weather_st_id + ".dly"
-        w_id_df = read_ghcn_data_file(data_dir, filename, elements=None, include_flags=False, dropna='all')
+        w_id_df = read_ghcn_data_file(data_dir, filename, save_dir, elements=None, include_flags=False, dropna='all')
 
 
 
-def combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv_file):
+def combine_relevant_weather_data(rel_data_dir, epa_dir, save_folder):
 
 
     col_names = ['EPA Station ID', 'Date', 'Weather Station ID', 'PRCP','SNOW','SNWD','TMAX','TMIN'] 
@@ -212,11 +209,11 @@ def combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv_file):
 
     count = 0
 
-    epa_df_2016 = get_epa(epa_dir,'2016')
-    epa_df_2017 = get_epa(epa_dir,'2017')
-    epa_df_2018 = get_epa(epa_dir,'2018')
-    epa_df_2019 = get_epa(epa_dir,'2019') 
-    epa_df_all = [epa_df_2016, epa_df_2017, epa_df_2018, epa_df_2019]
+    epa_df_2016 = utils.get_epa(epa_dir,'2016')
+    epa_df_2017 = utils.get_epa(epa_dir,'2017')
+    #epa_df_2018 = utils.get_epa(epa_dir,'2018')
+    #epa_df_2019 = utils.get_epa(epa_dir,'2019') 
+    epa_df_all = [epa_df_2016, epa_df_2017] #, epa_df_2018, epa_df_2019]
 
     loaded_weather_stations = {}  # dictionary that holds loaded weather dfs to avoid repeated .csv reading
 
@@ -256,29 +253,19 @@ def combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv_file):
                                                  weather_df_date['SNWD'][weather_df_date.index[0]], 
                                                  weather_df_date['TMAX'][weather_df_date.index[0]],
                                                  weather_df_date['TMIN'][weather_df_date.index[0]]]
+        save_name = "master_epa_new_" + str(year) + ".csv"
+        master_df.to_csv(os.path.join(save_folder, save_name), encoding='utf-8')
 
-        master_df.to_csv("/Users/sarahciresi/Desktop/master_epa_new_" + str(year) +".csv", encoding='utf-8')
+    master_df.to_csv(os.path.join(save_folder, "master_csv_2016_2017.csv"), encoding='utf-8')
+    return master_df
 
-    master_df.to_csv(master_csv_file, encoding='utf-8')
-
-        
 if __name__ == "__main__":
-
-    #epa_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/epa/"
-    epa_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/epa/"
-    ghcnd_base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/GHCND_weather/"
-    ghcnd_base_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/"
-    gh_data_dir = ghcnd_base_dir + "daily_data/ghcnd_hcn/"
-    sent_path = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/sentinel/2016/"
-    sent_file = "s2_2016_10_1002_171670012.tif"
-    weath_file = "USC00457507.dly"
+    #weather_station_to_years_of_data(utils.GHCND_BASE_FOLDER)
+    epa_to_closest_weather_station(utils.GHCND_BASE_FOLDER)
+    relevant_weather_dir = os.path.join(utils.GHCND_BASE_FOLDER, "relevant_ghc")
+    save_relevant_weather_data(utils.GHCND_DATA_FOLDER, relevant_weather_dir)
+    save_folder = utils.PROCESSED_DATA_FOLDER
+    combine_relevant_weather_data(relevant_weather_dir, utils.EPA_FOLDER, save_folder)
     
-    #weather_station_to_years_of_data(ghcnd_base_dir)
-    epa_to_closest_weather_station(ghcnd_base_dir)
-    #save_relevant_weather_data(gh_data_dir)
-    
-    rel_data_dir = "/Users/sarahciresi/Documents/GitHub/Fall2019/cs325b-airquality/cs325b/data/weather/relevant_ghc/"
-    master_csv = "/Users/sarahciresi/Desktop/master.csv"
-    #combine_relevant_weather_data(rel_data_dir, epa_dir, master_csv)
     
     

@@ -6,6 +6,8 @@ import utils
 from concurrent.futures import ThreadPoolExecutor
 import sys
 from pandarallel import pandarallel
+from add_column import add_columns_to_master_modis
+from dataloader import split_data_by_site
 
 try:
     import read_tiff
@@ -377,7 +379,7 @@ def main(argv):
         print("Saving all .tifs to .npy")
         save_all_sentinel_npy(utils.SENTINEL_FOLDER, NUM_FOLDER_THREADS, NUM_SAVING_THREADS)
     print("Loading dataframes...")
-    epa_df = utils.load_csv_dfs(utils.EPA_FOLDER)
+    epa_df = utils.get_epa(utils.EPA_FOLDER, year = "any")
     print("Loading Sentinel dates...")
     dates = load_sentinel_dates(utils.SENTINEL_METADATA_FOLDER)
     new_df = epa_df.assign(SENTINEL_FILENAME = "", SENTINEL_INDEX = -1)
@@ -389,7 +391,17 @@ def main(argv):
                                    sentinel_folder_path=utils.SENTINEL_FOLDER,
                                    sentinel_dates = dates)
     del dates
-    new_df.to_csv(os.path.join(utils.EPA_FOLDER, "combined_clean") + ".csv")
+    new_df.to_csv(os.path.join(utils.PROCESSED_DATA_FOLDER, "epa_sentinel") + ".csv")
+    weather_df = pd.read_csv(os.path.join(utils.PROCESSED_DATA_FOLDER, "master_csv_2016_2017.csv"))
+    weather_df = weather_df.rename(columns = {"EPA Station ID" : "Site ID"})
+    new_df = new_df.merge(weather_df, on = ['Site ID', 'Date'])
+    
+    modis_column_names = ["Blue [0,0]","Blue [0,1]","Blue [1,0]","Blue [1,1]","Green [0,0]","Green [0,1]","Green [1,0]","Green [1,1]"]
+    modis_file_path = os.path.join(utils.PROCESSED_DATA_FOLDER, "modis.csv")
+    read_tiff.save_all_modis_to_csv(modis_file_path, utils.MODIS_FOLDER)
+    epa = add_columns_to_master_modis(new_df, modis_file_path, modis_column_names)
+    split_data_by_site(epa)
+    
 
 if __name__ == "__main__":
     main(sys.argv)

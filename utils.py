@@ -18,6 +18,7 @@ BUCKET_FOLDER = "es262-airquality"
 EPA_FOLDER = os.path.join(BUCKET_FOLDER, "epa")
 GHCND_BASE_FOLDER = os.path.join(BUCKET_FOLDER, "GHCND_weather")
 GHCND_DATA_FOLDER = os.path.join(GHCND_BASE_FOLDER, "ghcnd_hcn")
+MODIS_FOLDER = os.path.join(BUCKET_FOLDER, "modis")
 SENTINEL_FOLDER = os.path.join(BUCKET_FOLDER, "sentinel")
 SENTINEL_METADATA_FOLDER = os.path.join(SENTINEL_FOLDER, "Metadata")
 PROCESSED_DATA_FOLDER = "processed_data"
@@ -28,7 +29,7 @@ def get_epa(epa_directory, year = '2016'):
     files = os.listdir(epa_directory)
     first_file = True
     for file in files:
-        if file[-8:]== year + ".csv":
+        if file[-8:]== year + ".csv" or year == "any":
             file_path = os.path.join(epa_directory, file)
             new_df = pd.read_csv(file_path)
             if not first_file:
@@ -61,7 +62,7 @@ def load_csv_dfs(folder_path, blacklist = [], excluded_years = []):
         file, ext = os.path.splitext(filename)
         if ext != ".csv" or filename in blacklist:
             continue
-        if int(file[:-4]) in excluded_years:
+        if int(file[-4:]) in excluded_years:
             continue
         file_path = os.path.join(folder_path, filename)
         df = pd.read_csv(file_path)

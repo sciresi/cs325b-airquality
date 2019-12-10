@@ -1,12 +1,12 @@
 import csv
 import argparse
 import time
-'''
+
 try:
     import gdal
 except ModuleNotFoundError:
     from osgeo import gdal
-'''
+
 import numpy as np
 #import rasterio
 #from rasterio.plot import show
@@ -254,7 +254,7 @@ def save_all_s2_imgs(directory):
         display_sentinel_gdal(directory, fname)
 
 
-def save_all_modis_to_csv(csv_filename):
+def save_all_modis_to_csv(csv_filename, modis_directory):
     '''
     Saves the blue and green channel values of the 4 center pixel values
     of every modis image (in all year directories) to the given csv named csv_filename.
@@ -265,11 +265,11 @@ def save_all_modis_to_csv(csv_filename):
         writer.writerow(["Filename", "Blue [0,0]", "Blue [0,1]", "Blue [1,0]", "Blue [1,1]",
                          "Green [0,0]", "Green [0,1]", "Green [1,0]", "Green [1,1]"])
         
-        base_dir = "/home/sarahciresi/gcloud/cs325b-airquality/cs325b/data/modis/"
-        sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/", "2018_processed_100x100/", "2019_processed_100x100/"]
+        base_dir = modis_directory
+        sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/"] #, "2018_processed_100x100/", "2019_processed_100x100/"]
         for sub_dir in sub_dirs:
 
-            full_dir = base_dir + sub_dir
+            full_dir = join(base_dir, sub_dir)
             print("Saving 2x2 cropped modis images from directory: {} of size {} \n".format(full_dir, len(listdir(full_dir))))
             
             for idx, fname in enumerate(listdir(full_dir)):
@@ -285,7 +285,7 @@ def save_all_modis_to_csv(csv_filename):
                 blues[blues<-50000] = -1
                 greens[greens<-50000] = -1
                 num_pixels = greens.shape[0] * greens.shape[1]
-                writer.writerow([blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
+                writer.writerow([fname, blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
                                  greens[1,0], greens[1,1]])
 
     csvfile.close()

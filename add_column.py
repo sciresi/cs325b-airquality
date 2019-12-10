@@ -37,19 +37,23 @@ def make_master_epa():
 
 #assumes other file is from modis and has modis filenames
 #merges columns into master epa file
-def add_columns_to_master_modis(other_file,columns):
-    epa = pandas.read_csv("master_epa.csv")
+def add_columns_to_master_modis(epa, other_file, columns):
+    #epa = pandas.read_csv("master_epa.csv")
     for column in columns:
         epa[column]=np.nan
     other = pandas.read_csv(other_file)
     for row in epa.index:
-        date = epa['Date'][row]
+        date = pandas.to_datetime(epa['Date'][row])
+        date = "{}-{}-{}".format(date.year, date.month, date.day)
         site = epa['Site ID'][row]
         modis_file = epa_to_file_name(date,site)
+        print(modis_file)
         other_row = other[other['Filename']==modis_file]
+        print(other_row)
         for column in columns:
             epa.loc[row,column] = other_row[column][other_row.index[0]]
-        
-    epa.to_csv("master_epa.csv",index=False)
-make_master_epa()
-add_columns_to_master_modis("modis.csv", ["Blue [0,0]","Blue [0,1]","Blue [1,0]","Blue [1,1]","Green [0,0]","Green [0,1]","Green [1,0]","Green [1,1]"])   
+    return epa
+    #epa.to_csv("master_epa.csv",index=False)
+    
+#make_master_epa()
+#add_columns_to_master_modis("modis.csv", ["Blue [0,0]","Blue [0,1]","Blue [1,0]","Blue [1,1]","Green [0,0]","Green [0,1]","Green [1,0]","Green [1,1]"])   
