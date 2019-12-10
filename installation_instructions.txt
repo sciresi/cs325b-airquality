@@ -1,0 +1,27 @@
+This project uses Python 3.7.4. The majority of the the necessary libraries
+are listed in requirements.txt, and these can be installed in one shot via
+
+    pip install -r requirements.txt
+
+One package that requires some extra work is GDAL for Python to handle .tif 
+files. GDAL requires some extra binaries and C libraries installed before the 
+Python installation will work, and this can sometimes cause some issues. On 
+Debian Stretch, the following lines have been successful:
+
+    sudo add-apt-repository ppa:ubuntugis/ppa && sudo apt-get update
+    sudo apt-get update
+    sudo apt-get install gdal-bin
+    sudo apt-get install libgdal-dev
+    export CPLUS_INCLUDE_PATH=/usr/include/gdal
+    export C_INCLUDE_PATH=/usr/include/gdal
+    pip install --user pygdal==2.1.2.3
+    
+In main.sh, you can include --install_gdal as a flag, and the lines above will 
+run to attempt installing GDAL. However, you may need Google to troubleshoot any 
+installation errors and finish the installation manually. The following links
+may be useful:
+
+    https://mothergeo-py.readthedocs.io/en/latest/development/how-to/gdal-ubuntu-pkg.html
+    https://pypi.org/project/GDAL/
+    https://gis.stackexchange.com/questions/9553/installing-gdal-and-ogr-for-python
+    https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
