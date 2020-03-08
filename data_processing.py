@@ -35,6 +35,7 @@ def save_sentinel_tif_to_npy(tif_file_path):
     images = read_tiff.read_middle(dir_path, filename, SENTINEL_CROP_SIZE, SENTINEL_CROP_SIZE)
     assert images.shape[2] % read_tiff.NUM_BANDS_SENTINEL == 0, "{} measurement mismatch!".format(tif_file_path)
     num_measurements = images.shape[2] // read_tiff.NUM_BANDS_SENTINEL
+    print("Num measurements from image: {}".format(num_measurements)) ##
     for measurement in range(num_measurements):
         band_start = read_tiff.NUM_BANDS_SENTINEL * measurement
         band_end = band_start + read_tiff.NUM_BANDS_SENTINEL
@@ -180,13 +181,17 @@ def get_sentinel_dates(metadata_file_path):
     """
     metadata_file = open(metadata_file_path)
     dates = []
-    seen_dates = set()
+    band_no = 1 # Keep track of band number, should be blocks of 13 bands
     for channel in ast.literal_eval(metadata_file.readline()):
         date = pd.to_datetime(channel.split("_")[1], yearfirst=True)
-        if date in seen_dates:
-            continue
-        dates.append(date)
-        seen_dates.add(date)
+        # Only save date if first band
+        if band_no == 14:
+            band_no = 1
+        if band_no == 1:
+            dates.append(date)
+            seen_dates.add(date)
+        band_no += 1
+            
     metadata_file.close()
     return dates
 
@@ -207,6 +212,7 @@ def find_closest_sentinel_index(epa_date, sentinel_dates):
     closest_index : int
         The index of the Sentinel image closest to the EPA measurement date.
     """
+
     epa_date = pd.to_datetime(epa_date, yearfirst=True)
     closest_index = None
     min_difference = None
@@ -218,8 +224,60 @@ def find_closest_sentinel_index(epa_date, sentinel_dates):
         elif difference < min_difference:
             closest_index = index
             min_difference = difference
-    return closest_index
+    
+    days_diff = min_difference.days
+    
+    return closest_index, days_diff
 
+
+def get_num_npy_images_for_file(sent_folder_path, filename_base):
+    """
+    Scans directory of sentinel .npy images
+    and counts up number .npy images for the given filename.
+
+    e.g. for the filename: s2_2016_10_60031001 -> if have images
+          s2_2016_10_60031001_0.npy, ..., s2_2016_10_60031001_7.npy, 
+          returns 8 
+    """
+    num_images = 0
+    files = [f for f in os.listdir(sent_folder_path)]
+    for file in files:
+        if filename_base in file:
+            num_images += 1
+    return num_images
+
+
+def compare_npy_size_to_num_metadata_readings(dates, sentinel_folder_path, filename_base):
+    """
+    Compares the channel dimension of the converted image 
+    to the number of metadata readings for that file.
+    These should match. 
+    Use to determine if should throw out a datapoint or not.
+    Returns True if the dimensions match as expected, False otherwise.
+    
+    Parameters
+    ----------
+    dates: list
+        a list of dates corresponding to the Metadata file that dates 
+        each measurement. One date for each set of 13 band measurements.
+        i.e.  len(dates) = # measurements
+    sentinel_folder_path : str
+        Full path to the folder storing Sentinel .npy files for each year.
+    filename_base : str
+        The base filename of the .npy sentinel image, e.g. s2_2016_10_60031001
+    """
+    
+    sentinel_folder_path_2016 = os.path.join(sentinel_folder_path, '2016')
+    
+    num_image_measurements = get_num_npy_images_for_file(sentinel_folder_path_2016, filename_base)
+    num_metadata_measurements = len(dates)
+
+    if num_metadata_measurements != num_image_measurements:
+        return False, num_image_measurements, num_metadata_measurements
+    else:
+        return True, num_image_measurements, num_metadata_measurements
+
+              
 def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path,
                       sentinel_dates):
     """
@@ -246,19 +304,39 @@ def add_sentinel_info(row, metadata_folder_path, sentinel_folder_path,
     row : pandas.Series
         The row with SENTINEL_FILENAME and SENTINEL_INDEX potentially modified.
     """
+    
     sentinel_filename = epa_row_to_sentinel_filename(row)
     metadata_filename = sentinel_filename + ".txt"
     metadata_file_path = os.path.join(metadata_folder_path, metadata_filename)
     if not os.path.exists(metadata_file_path):
+        print("Couldn't find metadata file {}".format(metadata_file_path))
         return row
-    epa_date = pd.to_datetime(row.Date)
+        
+    if sentinel_filename not in sentinel_dates:
+        return row
+    
+    epa_date = pd.to_datetime(row.Date)        
     dates = sentinel_dates[sentinel_filename]
-    closest_index = find_closest_sentinel_index(epa_date, dates)
+          
+    # Make sure # of measurements from metadata file match the # in the original .tif file
+    same_num, num_im, num_meta = compare_npy_size_to_num_metadata_readings(dates, sentinel_folder_path, sentinel_filename)
+    
+    if same_num == False:
+        print("Num measurement mismatch for file {} : {} metadata measurements, {} .tif measurements"
+              .format(sentinel_filename, num_meta, num_im))
+        return row
+    
+    closest_index, days_diff = find_closest_sentinel_index(epa_date, dates)
     sentinel_filename += "_{}.npy".format(closest_index)
     year = epa_date.year
     sentinel_file_path = os.path.join(sentinel_folder_path, str(year), sentinel_filename)
+  
     if not os.path.exists(sentinel_file_path):
+        print("Couldn't find sentinel .npy file {}".format(sentinel_file_path))
         return row
+    
+    print("Update successful for image {}".format(sentinel_filename))
+    row['PM Reading/Image day difference'] = days_diff
     row.SENTINEL_FILENAME = sentinel_filename
     row.SENTINEL_INDEX = closest_index
     return row
