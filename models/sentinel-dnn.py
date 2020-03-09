@@ -1,66 +1,39 @@
 import os
 import sys
-import csv
 import time
-import pandas
 import random
-import datetime
 import numpy as np
 from tqdm import tqdm
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
-from pandarallel import pandarallel
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataloader import load_data_new
 import utils
 
 
-class CNN_combined(nn.Module):
+class Sentinel_DNN(nn.Module):
     '''
-    End-to-end Multi-Modal Model
+    Sentinel DNN model.
     '''
-    def __init__(self, num_bands, device = "cpu"):
-        super(CNN_combined, self).__init__()
+    def __init__(self, device = "cpu"):
+        super(Sentinel_DNN, self).__init__()
 
-        in_channels = num_bands # 8 # 4 
-        out_channels1 = 64  
-        out_channels2 = 128  
-        out_channels3 = 256  
-        out_channels4 = 256
-        num_ff_features = 16  
+        num_input_features = 52   
         
         self.device = device
-        
-        # Conv portion
-        self.conv1 = nn.Conv2d(in_channels, out_channels1, kernel_size=5, stride=1, padding=2)
-        self.bn1 = nn.BatchNorm2d(out_channels1)
-        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=3)
-        self.conv2 = nn.Conv2d(out_channels1, out_channels2, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_channels2)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv3 = nn.Conv2d(out_channels2, out_channels3, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(out_channels3)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv4 = nn.Conv2d(out_channels3, out_channels4, kernel_size=3, stride=1, padding=1)
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+                
+        self.fc1 = nn.Linear(num_input_features, 500)
+        self.fc2 = nn.Linear(500, 1000)
+        self.bn2 = nn.BatchNorm1d(1000)
+        self.fc3 = nn.Linear(1000, 2000)    
+        self.fc4 = nn.Linear(2000, 1000)
+        self.fc5 = nn.Linear(1000, 1) 
+        self.drop = nn.Dropout(p=0.2) 
 
-        self.drop = nn.Dropout(p=0.5)
-        
-        # Feed forward portion
-        self.fffc1 = nn.Linear(num_ff_features, 500)
-        self.fffc2 = nn.Linear(500,500)
-        self.fffc3 = nn.Linear(500,100)
-        self.dropfffc = nn.Dropout(p=0.5) 
-        
-        # Recombined portion
-        self.fc1 = nn.Linear(256*8*8 + 100, 4000)
-        self.fc2 = nn.Linear(4000, 100)
-        self.fc3 = nn.Linear(100, 1) 
 
     def init_weights(self, m):
         if type(m) == nn.Conv2d or type(m) == nn.Linear:
@@ -68,35 +41,16 @@ class CNN_combined(nn.Module):
             m.bias.data.fill_(0.01)   
             
     def forward(self, x1, x2):
-        
-        # Conv
-        x1 = self.conv1(x1)
-        x1 = F.relu(self.bn1(x1))
-        x1 = self.pool1(x1)
-        x1 = self.conv2(x1)
-        x1 = F.relu(self.bn2(x1))
-        x1 = self.pool2(x1)
-        x1 = self.conv3(x1)
-        x1 = F.relu(self.bn3(x1))
-        x1 = self.pool3(x1)
-        x1 = F.relu(self.conv4(x1))
-        x1 = self.pool4(x1)
-        x1 = x1.reshape(x1.size(0), 256*8*8) 
-        x1 = self.drop(x1)
-        
-        # FF 
-        x2 = F.relu(self.fffc1(x2))
-        x2 = F.relu(self.fffc2(x2))
-        x2 = F.relu(self.fffc3(x2))
-        x2 = self.dropfffc(x2)
-        
-        # Combined 
-        x = torch.cat((x1, x2), dim=1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+
+        x = F.relu(self.fc1(x1))
+        x = F.relu(self.bn2(self.fc2(x)))
+        #x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = self.fc5(x)
+        # x = self.drop(x)
         x = x.reshape(-1)
-        
+
         return x
 
     def _set_seeds(self, seed):
@@ -108,6 +62,7 @@ class CNN_combined(nn.Module):
         random.seed(seed)
         np.random.seed(seed)
 
+        
 def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_step):
     '''
     Trains the model for 1 epoch on all batches in the dataloader.
@@ -118,6 +73,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
     num_batches = len(dataloader)
     train_dataset_size = num_batches * batch_size
 
+    # Set model to train mode
     model.train()
    
     print("Training for one epoch on {} batches.".format(num_batches))
@@ -126,18 +82,18 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
         
         for i, sample in enumerate(dataloader):
             
-            indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
+            indices, inputs, features, labels = sample['index'], sample['image_stats'], sample['non_image'], sample['label']
             sites, dates, states = sample['site'], sample['month'], sample['state']
             
             # Move to GPU if available       
             inputs = inputs.to(model.device, dtype=torch.float)
             labels = labels.to(model.device, dtype=torch.float)
             features = features.to(model.device, dtype=torch.float)
-                       
+                 
             # Forward pass and calculate loss
             outputs = model(inputs, features) 
             loss = loss_fn(outputs, labels)
-            #loss = loss_fn(outputs, labels, t_global_step, dataset='train') # Custom Weighted MSE loss
+            #loss = loss_fn(outputs, labels, 1, dataset='train') # Custom Weighted MSE loss
 
             # Compute gradients and perform parameter updates
             optimizer.zero_grad()
@@ -165,12 +121,8 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
             if epoch % 10 == 0:
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/combined_train_16_mini_epoch_" + str(epoch) + ".csv") 
-            
-            #writer.add_scalar('train/loss', loss, t_global_step)
-            #writer.add_scalar('train/r2', r2, t_global_step)
-            #t_global_step += 1
-
+                                       "predictions/sent_dnn" + str(epoch) + ".csv") 
+          
             del inputs, features, labels, outputs
             torch.cuda.empty_cache()
   
@@ -191,6 +143,7 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
     num_batches = len(dataloader)
     val_dataset_size = num_batches * batch_size
     
+    # Set model to eval mode
     model.eval()
     
     print("Evaluating on {} batches".format(num_batches))
@@ -199,7 +152,7 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
         with torch.no_grad():
             for i, sample in enumerate(dataloader):
                 
-                indices, inputs, features, labels = sample['index'], sample['image'], sample['non_image'], sample['label']
+                indices, inputs, features, labels = sample['index'], sample['image_stats'], sample['non_image'], sample['label']
                 sites, dates, states = sample['site'], sample['month'], sample['state']
 
                 # Move to GPU if available       
@@ -210,6 +163,7 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
                 # Forward pass and calculate loss
                 outputs = model(inputs, features) 
                 loss = loss_fn(outputs, labels)
+                #loss = loss_fn(outputs, labels, 1, dataset='val') # Custom Weighted MSE loss
                 
                 # Move to cpu and convert to numpy
                 outputs = outputs.data.cpu().numpy()
@@ -220,7 +174,7 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/combined_" + dataset + "_16_mini_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/sent_dnn" + dataset + "_16_mini_epoch_" + str(epoch) + ".csv") 
           
                 # Compute batch metrics
                 r2 = r2_score(labels, outputs)
@@ -232,7 +186,7 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
                 r2_str = '{:01.3f}'.format(r2)
                 t.set_postfix(loss=loss_str, r2=r2_str) 
                 t.update()
-                
+
                 del inputs, features, labels, outputs
                 torch.cuda.empty_cache()
    
@@ -243,8 +197,9 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
     return mean_metrics, v_global_step
 
 
-def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, val_dataloader, 
-                       batch_size, num_epochs, num_train, model_dir=None, saved_weights_file=None):
+def train_and_evaluate(model, optimizer, loss_fn, train_dataloader, 
+                       val_dataloader, batch_size, num_epochs, num_train,
+                       model_dir=None, saved_weights_file=None):
     '''
     Trains the model and evaluates at every epoch
     '''
@@ -326,90 +281,72 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
         print("Restoring parameters from {}".format(saved_weights_path))
 
     # Evaluate on validation or test set
-    epoch = "all_time_best_weights" ##
+    epoch = "final"
     mean_metrics, v_global_step = evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, 0)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
-
+    
     
 
 def run_train():
     '''
     Runs the whole training process.
     '''
-    
     npy_dir = utils.SENTINEL_FOLDER 
-    checkpt_dir = "checkpoints/end_to_end/"
-    
-    #train_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
-    #val_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
-    #test_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
-    
-    #train_thresh =  os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_DT_and_thresh_2000_csv_2016.csv")
-    train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_sufficient_close_stats_2016.csv")
-    val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_sufficient_close_stats_2016.csv")
+    checkpt_dir = "checkpoints/sent_dnn/"  
 
+    train = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_DT_2000_stats_csv_2016.csv")
+    val = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_DT_2000_stats_csv_2016.csv")
+    
     lr = 0.00001
     reg = 5e-2    
     batch_size = 90 
-    num_epochs = 20 ## 150
-    num_train = 87962 # = thresholded ##308132 
+    num_epochs = 50 
+    num_train = 87962 
    
     print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
    
-    dataloaders = load_data_new(train_repaired, batch_size = batch_size, 
+    dataloaders = load_data_new(train, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
-                                train_images=npy_dir, val_images=npy_dir, 
-                                val_nonimage_csv=val_repaired,
-                                num_sent_bands=8,
-                                stats_in_csv=True)    
+                                val_nonimage_csv=val, stats_in_csv=True)   
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = CNN_combined(num_bands=8, device=device)
+    model = Sentinel_DNN(device)
     model.to(device)
 
     model._set_seeds(0)
     model.apply(model.init_weights)
     optimizer = optim.Adam(model.parameters(), lr = lr, weight_decay=reg)
-        
-    train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
+ 
+    train_and_evaluate(model, optimizer, nn.MSELoss() , dataloaders['train'], dataloaders['val'], 
                        batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
-                       model_dir = checkpt_dir, saved_weights_file="best_weights")
+                       model_dir = checkpt_dir) 
     
 def run_test():
     '''
     Runs final evaluation on the test set.   
     '''
  
-    npy_dir = utils.SENTINEL_FOLDER 
-    checkpt_dir = "checkpoints/end_to_end/"    
-    
-    #train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
-    #test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+    npy_dir = utils.SENTINEL_FOLDER
+    checkpt_dir = "checkpoints/sent_dnn/"    
 
-    ### Testing with thresholded dataset 
-    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_DT_and_thresh_2000_csv_2016.csv")
-    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_DT_and_thresh_2000_csv_2016.csv")
-    ###
-    
-    batch_size,num_epochs = 0.00001,5e-2,90,150
-    
-    dataloaders = load_data_new(train_csv, batch_size = batch_size, 
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
+        
+    dataloaders = load_data_new(train_csv, batch_size = 90, 
                                 sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, test_images=npy_dir, 
-                                test_nonimage_csv=test_csv,
-                                num_sent_bands=8,
-                                stats_in_csv=True)    
+                                test_nonimage_csv=test_csv)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = CNN_combined(num_bands=8, device=device)
+    model = Sentinel_DNN(device)
     model.to(device)
     
-    predict(model, nn.MSELoss(), dataloaders['test'], batch_size, num_epochs, 
-            dataset='test', model_dir=checkpt_dir, saved_weights_file="all_time_best")
+    predict(model, nn.MSELoss(), dataloaders['test'], batch_size=90, num_epochs=1, 
+            dataset='test', model_dir=checkpt_dir, saved_weights_file="best_weights")
     
     
 if __name__ == "__main__":
     
     run_train()
-    #run_test()
+    ## run_test()
