@@ -32,7 +32,7 @@ def read(dir_path, tif_path):
     '''
     Reads the full image from the tif file given by tif_path.
     '''
-    gdal_dataset = gdal.Open(dir_path + tif_path)
+    gdal_dataset = gdal.Open(os.path.join(dir_path,tif_path))
     WW, HH = gdal_dataset.RasterXSize, gdal_dataset.RasterYSize 
     return read_middle(dir_path, tif_path, WW, HH)
     

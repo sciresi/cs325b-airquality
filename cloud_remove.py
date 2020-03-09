@@ -7,12 +7,6 @@ import sys
 import matplotlib.pyplot as plt
 from pandarallel import pandarallel
 
-HOME_FOLDER = os.path.expanduser("~")
-REPO_NAME = "cs325b-airquality"
-DATA_FOLDER = "data"
-REPO_FOLDER = os.path.join(HOME_FOLDER, REPO_NAME)
-SENTINEL_FOLDER = os.path.join(REPO_FOLDER, DATA_FOLDER, "sentinel")
-PROCESSED_DATA_FOLDER = os.path.join(REPO_FOLDER, DATA_FOLDER, "processed_data")
 YEAR = '2016'
 
 def resave_master_csv_single_year(master_csv):
@@ -41,7 +35,7 @@ def get_means_row(row):
     npy_filename = str(row["SENTINEL_FILENAME"])
     tif_index =  int(row["SENTINEL_INDEX"])
     #npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
-    npy_fullpath = os.path.join(SENTINEL_FOLDER, YEAR, npy_filename)
+    npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, YEAR, npy_filename)
     image = np.load(npy_fullpath).astype(np.int16)
     means = np.mean(image, axis = (0,1))
 
@@ -51,7 +45,7 @@ def get_mins_row(row):
     npy_filename = str(row["SENTINEL_FILENAME"])
     tif_index =  int(row["SENTINEL_INDEX"])
     #npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
-    npy_fullpath = os.path.join(SENTINEL_FOLDER, YEAR, npy_filename)
+    npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, YEAR, npy_filename)
     image = np.load(npy_fullpath).astype(np.int16)
     mins = np.min(image, axis = (0,1))
     return mins
@@ -60,7 +54,7 @@ def get_maxes_row(row):
     npy_filename = str(row["SENTINEL_FILENAME"])
     tif_index =  int(row["SENTINEL_INDEX"])
     #npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
-    npy_fullpath = os.path.join(SENTINEL_FOLDER, YEAR, npy_filename)
+    npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, YEAR, npy_filename)
     image = np.load(npy_fullpath).astype(np.int16)
     maxes = np.max(image, axis = (0,1))
     return maxes    
@@ -69,7 +63,7 @@ def get_stdvs_row(row):
     npy_filename = str(row["SENTINEL_FILENAME"])
     tif_index =  int(row["SENTINEL_INDEX"])
     #npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
-    npy_fullpath = os.path.join(SENTINEL_FOLDER, YEAR, npy_filename)
+    npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, YEAR, npy_filename)
     image = np.load(npy_fullpath).astype(np.int16)
     stdvs = np.std(image, axis = (0,1))
     return stdvs
@@ -79,12 +73,11 @@ def check_is_cloudy_row(row, threshold=4000):
     npy_filename = str(row["SENTINEL_FILENAME"])
     tif_index =  int(row["SENTINEL_INDEX"])
     #npy_filename = npy_filename[:-4] + "_" + str(tif_index) + ".npy"
-    npy_fullpath = os.path.join(SENTINEL_FOLDER, YEAR, npy_filename)
+    npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, YEAR, npy_filename)
     image = np.load(npy_fullpath).astype(np.int16)
     means = np.mean(image, axis = (0,1))
     mean_b, mean_g, mean_r = means[1], means[2], means[3]
     mean_rgb = (mean_b+mean_g+mean_r)/3
-    #below_threshold = mean_rgb < threshold
     
     ## Use decision tree on other bands as well as threshold 
     is_cloudy = DecisionTree(image, npy_filename) 
@@ -99,7 +92,7 @@ def remove_sent_over_threshold(master_csv_year, to_threshold_csv, threshold=3000
          to_threshold_csv = train_csv_thresholded_2016_4000,
          threshold=4000
     '''
-    pandarallel.initialize()
+    pandarallel.initialize(progress_bar=True)
     
     df = pd.read_csv(master_csv_year, index_col=0)
     initial_len = len(df)
@@ -133,7 +126,7 @@ def display_sample_images(thresholded_csv):
         day_idx =  int(row['SENTINEL_INDEX'])
 
         npy_filename = npy_filename[:-4] + "_" + str(day_idx) + ".npy"
-        npy_fullpath = os.path.join(SENTINEL_FOLDER, year, npy_filename)
+        npy_fullpath = os.path.join(utils.SENTINEL_FOLDER, year, npy_filename)
         image = np.load(npy_fullpath).astype(np.int16)
     
         # Normalize the inputs
@@ -168,7 +161,7 @@ def save_img(filename):
     '''
     Save Sentinel image as RGB.
     '''
-    fullpath = os.path.join(SENTINEL_FOLDER, year, filename)
+    fullpath = os.path.join(utils.SENTINEL_FOLDER, year, filename)
     image = np.load(fullpath).astype(np.int16)
     blues = image[:,:, 1]   # Band 2
     greens = image[:,:, 2]  # Band 3
@@ -277,12 +270,12 @@ def split(data_csv):
 
 if __name__ == "__main__":
     
-    new_train_repaired = os.path.join(REPO_FOLDER, "train_repaired_sufficient.csv")
-    new_train_repaired_stats = os.path.join(REPO_FOLDER, "train_repaired_sufficient_stats_2016.csv")
-    new_val_repaired = os.path.join(REPO_FOLDER, "val_repaired_sufficient.csv")
-    new_val_repaired_stats = os.path.join(REPO_FOLDER, "val_repaired_sufficient_stats_2016.csv")
-    new_test_repaired = os.path.join(REPO_FOLDER, "test_repaired_sufficient.csv")
-    new_test_repaired_stats = os.path.join(REPO_FOLDER, "test_repaired_sufficient_stats_2016.csv")
+    new_train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_sufficient.csv")
+    new_train_repaired_stats = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_sufficient_stats_2016.csv")
+    new_val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_sufficient.csv")
+    new_val_repaired_stats = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_sufficient_stats_2016.csv")
+    new_test_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_repaired_sufficient.csv")
+    new_test_repaired_stats = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_repaired_sufficient_stats_2016.csv")
 
     #remove_sent_over_threshold(train_csv_thresholded_2016_3000, new_train, threshold=2000)  
     #remove_sent_over_threshold(val_csv_2016, val_csv_thresholded_2016_4000, threshold=4000)

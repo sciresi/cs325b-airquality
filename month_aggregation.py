@@ -5,13 +5,9 @@ import pandas as pd
 from sklearn.metrics import r2_score
 from pandarallel import pandarallel 
 from scipy.stats.stats import pearsonr
-from utils import compute_r2
+import utils
 
-HOME_FOLDER = os.path.expanduser("~")
-REPO_NAME = "cs325b-airquality"
-DATA_FOLDER = os.path.join(HOME_FOLDER, REPO_NAME, "data")
-PREDICTIONS_FOLDER = os.path.join(HOME_FOLDER, REPO_NAME, "predictions")
-PROCESSED_DATA_FOLDER = os.path.join(DATA_FOLDER, "processed_data")
+PREDICTIONS_FOLDER = os.path.join(utils.HOME_FOLDER, utils.REPO_NAME, "predictions")
 
 def get_month(row):
     date = pd.to_datetime(row['Date'])
@@ -140,7 +136,7 @@ def run_month_loop(val_master, val_preds_csv, true_averages_csv, both_monthly_av
 
 if __name__ == "__main__":
 
-    val_master = os.path.join(PROCESSED_DATA_FOLDER, "val_sites_DT_and_thresh_2000_csv_2016.csv")
+    val_master = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_DT_and_thresh_2000_csv_2016.csv")
     val_preds = os.path.join(PREDICTIONS_FOLDER, "combined_val_16_mini_epoch_13.csv")
     r2, p = run_month_loop(val_master, val_preds, "final_true_avgs.csv", "final_monthly_avgs.csv", "final_preds_and_avgs.csv")
     print("Monthly averages R2: {}".format(r2))

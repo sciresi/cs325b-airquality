@@ -1,12 +1,12 @@
-import pandas as pd
 import os
 import ast
 import csv
-import numpy as np
 import json
 import shutil
 import torch
 import yaml
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch.nn as nn
@@ -14,18 +14,26 @@ from sklearn.metrics import r2_score
 from pandarallel import pandarallel 
 from scipy.stats.stats import pearsonr
 
-BUCKET_FOLDER = "es262-airquality"
-EPA_FOLDER = os.path.join(BUCKET_FOLDER, "epa")
-GHCND_BASE_FOLDER = os.path.join(BUCKET_FOLDER, "GHCND_weather")
+HOME_FOLDER = os.path.expanduser("~")
+REPO_NAME = "cs325b-airquality" #"es262-airquality"
+BUCKET_FOLDER = os.path.join(HOME_FOLDER, REPO_NAME)
+DATA_FOLDER = os.path.join(BUCKET_FOLDER, "data")
+EPA_FOLDER = os.path.join(DATA_FOLDER, "epa")
+GHCND_BASE_FOLDER = os.path.join(DATA_FOLDER, "GHCND_weather")
 GHCND_DATA_FOLDER = os.path.join(GHCND_BASE_FOLDER, "ghcnd_hcn")
-MODIS_FOLDER = os.path.join(BUCKET_FOLDER, "modis")
-SENTINEL_FOLDER = os.path.join(BUCKET_FOLDER, "sentinel")
-SENTINEL_METADATA_FOLDER = os.path.join(SENTINEL_FOLDER, "Metadata")
-PROCESSED_DATA_FOLDER = "processed_data"
+MODIS_FOLDER = os.path.join(DATA_FOLDER, "modis")
+SENTINEL_FOLDER = os.path.join(DATA_FOLDER, "sentinel")
+SENTINEL_METADATA_FOLDER = os.path.join(DATA_FOLDER, "Metadata")
+PROCESSED_DATA_FOLDER = os.path.join(DATA_FOLDER, "processed_data")
 
-#gathers all the 2016 csv files into one dataframe
-#returns dataframe
+
 def get_epa(epa_directory, year = '2016'):
+    """
+    Gathers all the EPA csv files for a given year
+    located in the directory referenced by epa_directory.
+    
+    Loads into one dataframe and returns this aggregated dataframe. 
+    """
     files = os.listdir(epa_directory)
     first_file = True
     for file in files:
@@ -188,8 +196,16 @@ def remove_full_missing_modis(df):
     Given a df, removes the entries with fully missing modis values
     (i.e. all 8 pixel values are missing) 
     '''
-    # Todo 
-    pass
+    df = df[(df['Blue [0,0]'] != -1) 
+            & (df['Blue [0,1]'] != -1)
+            & (df['Blue [1,0]'] != -1)
+            & (df['Blue [1,1]'] != -1)
+            & (df['Green [0,0]'] != -1)
+            & (df['Green [0,1]'] != -1)
+            & (df['Green [1,0]'] != -1)
+            & (df['Green [1,1]'] != -1 )]
+    
+    return df
         
     
 def remove_missing_sent(full_df):
@@ -228,7 +244,8 @@ def remove_sent_and_save_df_to_csv(load_from_csv_filename, save_to_csv_filename)
     
     
 def load_sentinel_npy_files(epa_row, npy_files_dir_path):
-    ''' Reads in a sentinel.npy file which is a (h, w, 13) tensor of the sentinel image 
+    ''' 
+    Reads in a sentinel.npy file which is a (h, w, 13) tensor of the sentinel image 
     for the day specified by the 'SENTINEL_INDEX' in epa_row.
     '''
     original_tif_filename = str(epa_row['SENTINEL_FILENAME'])
@@ -239,12 +256,19 @@ def load_sentinel_npy_files(epa_row, npy_files_dir_path):
     return img
  
     
-def get_PM_from_row(epa_row):
+def get_PM_from_row(row):
     '''
-    Given a row in a df, returns the PM2.5 concentration. To be used with pandarallel parallel_apply().
+    Given a row in a df, returns the PM2.5 concentration. 
+    To be used with pandarallel parallel_apply().
     '''
-    pm_val =  float(epa_row['Daily Mean PM2.5 Concentration'])
+    pm_val =  float(row['Daily Mean PM2.5 Concentration'])
     return pm_val
+
+
+def get_month(row):
+    date = pd.to_datetime(row['Date'])
+    month = date.month
+    return month
 
 
 def save_dict_to_json(d, json_path):
@@ -270,13 +294,13 @@ def save_checkpoint(state, is_best, checkpoint):
         checkpoint: (string) folder where parameters are to be saved
     '''
     
-    filepath = os.path.join(checkpoint, 'last_weights.pth.tar')
+    filepath = os.path.join(checkpoint, 'last_weights_2_20.pth.tar')
     if not os.path.exists(checkpoint):
         print("Checkpoint Directory does not exist! Making directory {}".format(checkpoint))
         os.mkdir(checkpoint)
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'best_weights.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint, 'best_weights_2_20.pth.tar'))
 
         
 def load_checkpoint(checkpoint, model, optimizer=None):
@@ -307,7 +331,6 @@ def plot_losses(train_losses, val_losses, num_epochs, num_ex, save_as):
     plt.clf()
     plt.plot(range(0, num_epochs), train_losses, label='train')
     plt.plot(range(0, num_epochs), val_losses, label='val')
-    #plt.axis([0, num_epochs, 0, 1])
     plt.legend(loc=2)
     plt.xlabel("Epoch")
     plt.ylabel("MSE Loss")
@@ -433,20 +456,6 @@ def compute_r2(predictions_csv):
     pearson = pearsonr(labels, predictions)
     return r2, pearson 
     
-def compute_r2_monthly(predictions_csv):
-    '''                                                 
-    Takes in .csv created from save_predictions of (indices, predictions, labels)
-    for each example, and calculates total R2 over the dataset.
-    '''
-    df = fix_month_avg_preds_file(predictions_csv)
-    
-    predictions = df['Month Average']
-    labels = df['Predicted Month Average']
-    
-    r2 = r2_score(labels, predictions)
-    pearson = pearsonr(labels, predictions)
-    return r2, pearson     
-
 
 def compute_mse(predictions_csv):
     '''
@@ -503,168 +512,6 @@ def plot_loss_histogram(predictions_csv):
     sorted_above_three = above_three_stdv.sort_values(by=['Index'])
     
     
-def get_month(row):
-    date = pd.to_datetime(row['Date'])
-    month = date.month
-    return month
-
-
-def resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv="averages.csv"):
-    '''                                                                                                        
-    Helper function to take  given predictions file/df and gather Site ID                       
-    and month information for all datapoints in the file. Saves new .csv with these                            
-    columns added and returns the df. To be used in computing monthly averages                              
-    from daily PM predictions.                                                                                 
-    '''
-    new_pred_csv = "new_preds.csv"
-    master_df = pd.read_csv(master_csv)
-    pred_df = pd.read_csv(predictions_csv)
-
-    new_pred_df = pd.DataFrame(columns=['Index', 'Prediction', 'Label', 'Month' ,'Site ID'])
-    indices = pred_df['Index']
-    for index in indices:
-        pred_row = pred_df[pred_df['Index']==index]
-        epa_row = master_df.loc[index]
-        month = get_month(epa_row)
-        site = epa_row['Site ID']
-        pred_row['Month'] = month
-        pred_row['Site ID'] = site
-        new_pred_df = new_pred_df.append(pred_row)
-
-    # Save new predictions file                                                                                
-    new_pred_df.to_csv(new_pred_csv)
-
-    return new_pred_df
-
-
-def compute_pm_month_average_post(predictions_csv, master_csv, averages_csv="averages.csv"):
-    '''                                                                                                        
-    Computes PM monthly averages from daily predictions (after training). To be                                
-    used when predicting daily average, then aggregating monthly after training.    
-    
-    Saves new predicted averages to separate .csv. Then reads from both averages.csv
-    and predicted_averages.csv, joins the two df, and saves final df with both 
-    true and predicted averages.
-    '''
-    predicted_avgs_csv = "test1617_predicted_avgs_csv.csv"
-    predicted_and_true_avgs_csv = "test1617_pred_and_true_avgs.csv"  
-
-    master_df = pd.read_csv(master_csv)
-    averages_df = pd.read_csv(averages_csv)
-    new_pred_df = resave_preds_with_month_and_site(predictions_csv, master_csv, averages_csv)
-
-    epa_stations = new_pred_df['Site ID'].unique()
-
-    with open(predicted_avgs_csv, 'a') as fd:
-        writer = csv.writer(fd)
-        writer.writerow(["Site ID", "Month", "Predicted Month Average"])
-
-        for i, station_id in enumerate(epa_stations):
-            station_datapoints = new_pred_df[new_pred_df['Site ID'] == station_id]
-
-            for month in range(1,13):
-
-                month_m_at_station_i = station_datapoints[station_datapoints['Month'] == month]
-                if len(month_m_at_station_i) == 0:
-                    continue
-                pm_preds_for_month_m_at_station_i = month_m_at_station_i['Prediction']
-                month_average_pred = np.mean(pm_preds_for_month_m_at_station_i)
-                row = [station_id, month, month_average_pred]
-                writer.writerow(row)
-
-    # Now read from new averages file and merge with old                                                       
-    average_df = pd.read_csv(averages_csv)
-    average_df = average_df.set_index(["Site ID", "Month"])
-    predicted_average_df = pd.read_csv(predicted_avgs_csv)
-    predicted_average_df = predicted_average_df.set_index(["Site ID", "Month"])
-    combined = pd.concat([average_df, predicted_average_df], axis=1)
-    combined.to_csv(predicted_and_true_avgs_csv)
-
-    
-def compute_pm_month_average_pre(master_csv, averages_csv="averages.csv"):
-    '''
-    Computes PM monthly averages prior to training and adds to master sheet.
-    To be used when trying to directly predict monthly average.
-    '''
-    
-    pandarallel.initialize()
-
-    df = pd.read_csv(master_csv)
-
-    # Index on 'Month' and 'Site Id' to compute averages at each station for the month                                           
-    months = df.parallel_apply(get_month, axis=1)
-    df['Month'] = months
-
-    epa_stations = df['Site ID'].unique()
-    num_sites = len(epa_stations)
-
-    with open(averages_csv, 'a') as fd:
-        writer = csv.writer(fd)
-        writer.writerow(["Site ID", "Month", "Month Average"])
-        for i, station_id in enumerate(epa_stations):
-            if i%100 == 0:
-                print("Getting monthly averages for site {}/{}".format(i, num_sites))
-
-            station_datapoints = df[df['Site ID'] == station_id]
-
-            for month in range(1,13):
-
-                month_m_at_station_i = station_datapoints[station_datapoints['Month'] == month]
-                pms_for_month_m_at_station_i = month_m_at_station_i['Daily Mean PM2.5 Concentration']
-                month_average = np.mean(pms_for_month_m_at_station_i)
-                row = [station_id, month, month_average]
-                writer.writerow(row)
-
-                
-def fix_month_avg_preds_file(preds_true_file):
-    '''
-    Removes all null entries in the merged monthly averages file.
-    '''
-    df = pd.read_csv(preds_true_file)
-    df = df[df['Month Average'].notnull()]
-    df = df[df['Predicted Month Average'].notnull()]
-    return df
-    
-    
-def get_month_average(epa_row):
-    averages_csv = "averages.csv"
-    average_df = pd.read_csv(averages_csv)
-
-    # from epa row get month and station id of datapoint                                                                         
-    date = pd.to_datetime(epa_row['Date'])
-    month = date.month
-    station = epa_row['Site ID']
-
-    # look up in averages file the corresponding average                                                                         
-    average_row = average_df[(average_df['Site ID'] == station) & (average_df['Month'] == month)]
-    average = average_row['Month Average']
-
-    return average
-
-
-def add_pm_month_average(master_csv):
-    '''
-    Adds monthly averages column to dataframe stored in master_csv, 
-    and saves to new csv for use in post-prediction monthly average aggregation.
-    '''
-    pandarallel.initialize()
-
-    averages_csv = "test_averages.csv"
-
-    master_df = pd.read_csv(master_csv)
-    months = master_df.parallel_apply(get_month, axis=1)
-    master_df['Month'] = months
-
-    average_df = pd.read_csv(averages_csv)
-    average_df = average_df.set_index(["Site ID", "Month"])
-
-    combined = master_df.join(average_df, on=["Site ID", "Month"], how='left')
-  
-    save_to = "test1617_csv_with_averages.csv"
-    combined.to_csv(save_to)
-
-
-
 def month_average_analysis(averages_csv):
     '''
     Method that computes the mean monthly PM2.5 average over all sites. 
@@ -756,7 +603,7 @@ def highest_loss_analysis_via_outliers(predictions_csv):
     plt.show()
     
     n = 5 # Top 5 most fq sites most informative; 4 most fq months most informative
-    most_fq_in_category = category_outliers.value_counts()[:n].index.tolist()  # Top 5 most fq sites most informative
+    most_fq_in_category = category_outliers.value_counts()[:n].index.tolist()  
     return most_fq_in_category
 
     
@@ -818,3 +665,27 @@ def highest_loss_analysis(predictions_csv, model_name):
     plt.savefig("plots/avg_losses_by_state_"+ model_name +".png")
     plt.show()
     
+    
+def compute_per_site_r2(preds_csv):
+    '''
+    Reads in predictions df given in preds_csv and 
+    computes the per-site r2 and Pearson for the predictions.
+    '''
+    df = pd.read_csv(preds_csv)
+    epa_stations = df['Site ID'].unique()
+
+    for idx, station in enumerate(epa_stations):
+        station_df = df[df['Site ID'] == station]
+        predictions = station_df['Prediction']
+        labels = station_df['Label']
+        r2 = r2_score(labels, predictions)
+        pearson = pearsonr(labels, predictions)
+        print("Site {}/{}: {} r2 score: {}".format(idx, len(epa_stations), station, r2))
+            
+    #labels = df['Month Average']
+    #predictions = df['Predicted Month Average']
+            
+    return r2, pearson
+
+
+
