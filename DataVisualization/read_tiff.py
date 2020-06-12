@@ -1,7 +1,7 @@
+import os
 import csv
 import argparse
 import time
-
 try:
     import gdal
 except ModuleNotFoundError:
@@ -15,6 +15,9 @@ from os import listdir
 from os.path import isfile, join, exists
 import collections
 
+HOME_FOLDER = os.path.expanduser("~")
+REPO_NAME = "cs325b-airquality" #"es262-airquality"
+BUCKET_FOLDER = os.path.join(HOME_FOLDER, REPO_NAME)
 NUM_BANDS_SENTINEL = 13
 
 def normalize(arr):
@@ -211,11 +214,12 @@ def display_sentinel_gdal(dir_path, filename):
         blues = normalize(blues)  
 
         img = np.dstack((reds, greens, blues)).astype(int)
-
+        index_filename = filename + '__' + str(day) + '.png'
+        
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2_display/'+ filename + '__' + str(day) + '.png')
-                
+        plt.savefig(os.path.join(BUCKET_FOLDER, index_filename))
+      
     return img
 
 
@@ -238,11 +242,12 @@ def display_sentinel_rast(dir_path, filename):
         blues = normalize(blues)   
         
         img = np.dstack((reds,greens,blues)).astype(int)
-        
+        index_filename = filename + '__' + str(day) + '.png'
+
         # save image of each measurement
         plt.imshow(img)
         plt.show()
-        plt.savefig('/home/sarahciresi/gcloud/cs325b-airquality/cs325b/images/s2_display/' + filename + '_m' + str(day) +'.png')    
+        plt.savefig(os.path.join(BUCKET_FOLDER, index_filename))
 
 
 def save_all_s2_imgs(directory):
@@ -266,7 +271,7 @@ def save_all_modis_to_csv(csv_filename, modis_directory):
                          "Green [0,0]", "Green [0,1]", "Green [1,0]", "Green [1,1]"])
         
         base_dir = modis_directory
-        sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/"] #, "2018_processed_100x100/", "2019_processed_100x100/"]
+        sub_dirs = ["2016_processed_100x100/", "2017_processed_100x100/"] 
         for sub_dir in sub_dirs:
 
             full_dir = join(base_dir, sub_dir)
@@ -285,8 +290,9 @@ def save_all_modis_to_csv(csv_filename, modis_directory):
                 blues[blues<-50000] = -1
                 greens[greens<-50000] = -1
                 num_pixels = greens.shape[0] * greens.shape[1]
-                writer.writerow([fname, blues[0,0], blues[0,1], blues[1,0], blues[1,1], greens[0,0], greens[0,1], 
-                                 greens[1,0], greens[1,1]])
+                writer.writerow([fname, blues[0,0], blues[0,1], 
+                                 blues[1,0], blues[1,1], greens[0,0],
+                                 greens[0,1],greens[1,0], greens[1,1]])
 
     csvfile.close()
 

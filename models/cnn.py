@@ -23,10 +23,10 @@ class Small_CNN(nn.Module):
     '''
     Sentinel-2 CNN
     '''
-    def __init__(self, device = "cpu"):
+    def __init__(self, num_bands, device = "cpu"):
         super(Small_CNN, self).__init__()
 
-        in_channels = 8 
+        in_channels = num_bands 
         out_channels1 = 64
         out_channels2 = 128
         out_channels3 = 256
@@ -145,7 +145,7 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, scheduler=No
             # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/cnn_train_preds_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/repaired/cnn_train_preds_epoch_" + str(epoch) + ".csv") 
          
             del inputs, labels, outputs
             torch.cuda.empty_cache()
@@ -196,7 +196,7 @@ def evaluate(model, loss_fn, dataloader, batch_size, epoch):
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/cnn_val_preds_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/repaired/cnn_val_preds_epoch_" + str(epoch) + ".csv") 
  
                 # Save metrics
                 r2 = r2_score(labels, outputs) 
@@ -293,7 +293,6 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
         utils.load_checkpoint(saved_weights_path, model)
         print("Restoring parameters from {}".format(saved_weights_path))
 
-
     # Evaluate on validation or test set
     epoch = "final"
     mean_metrics = evaluate(model, loss_fn, dataloader, batch_size, epoch)
@@ -307,26 +306,32 @@ def run_train():
     '''
     
     npy_dir = utils.SENTINEL_FOLDER 
-    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
-    val_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
+    #train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
+    #val_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
     test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
-    checkpt_dir = "checkpoints/sentinel_cnn/"
+    checkpt_dir = "checkpoints/sentinel_cnn/repaired/"
     
+    train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_suff_stats_cloud_remove_2016.csv")
+    val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_suff_stats_cloud_remove_2016.csv")
+
     lr = 0.00001
     reg = 1e-5
-    batch_size = 64
-    num_epochs = 100 
-    num_train = 107376 
+    batch_size = 90
+    num_epochs = 30 
+    num_train = 12761 #103604 #107376 
+    num_sent_bands = 13
     
     print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
    
-    dataloaders = load_data_new(train_csv, batch_size = batch_size, 
+    dataloaders = load_data_new(train_repaired, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, val_images=npy_dir, 
-                                val_nonimage_csv=val_csv)    
+                                val_nonimage_csv=val_repaired,
+                                num_sent_bands=num_sent_bands,
+                                stats_in_csv=True)  
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Small_CNN(device)
+    model = Small_CNN(num_bands=num_sent_bands, device=device)
     model.to(device)
 
     model._set_seeds(0)

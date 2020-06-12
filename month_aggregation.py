@@ -136,8 +136,9 @@ def run_month_loop(val_master, val_preds_csv, true_averages_csv, both_monthly_av
 
 if __name__ == "__main__":
 
-    val_master = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_DT_and_thresh_2000_csv_2016.csv")
-    val_preds = os.path.join(PREDICTIONS_FOLDER, "combined_val_16_mini_epoch_13.csv")
+    val_master = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_suff_stats_cloud_remove_2016.csv")
+    val_preds = os.path.join(PREDICTIONS_FOLDER, "repaired/combined_train_17_epoch_0.csv")
     r2, p = run_month_loop(val_master, val_preds, "final_true_avgs.csv", "final_monthly_avgs.csv", "final_preds_and_avgs.csv")
     print("Monthly averages R2: {}".format(r2))
-    
+    print("Monthly averages Pearson: {}".format(p))
+    print("Monthly averages Pearson squared: {}".format(p[0]**2))

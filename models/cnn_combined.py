@@ -165,12 +165,8 @@ def train(model, optimizer, loss_fn, dataloader, batch_size, epoch, t_global_ste
             if epoch % 10 == 0:
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/combined_train_16_mini_epoch_" + str(epoch) + ".csv") 
-            
-            #writer.add_scalar('train/loss', loss, t_global_step)
-            #writer.add_scalar('train/r2', r2, t_global_step)
-            #t_global_step += 1
-
+                                       "predictions/repaired/combined_train_17_epoch_" + str(epoch) + ".csv") 
+           
             del inputs, features, labels, outputs
             torch.cuda.empty_cache()
   
@@ -220,9 +216,12 @@ def evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, v_global_st
                 # Save predictions to compute r2 over full dataset
                 curr_batch_size = outputs.shape[0]  
                 utils.save_predictions(indices, outputs, labels, sites, dates, states, curr_batch_size, 
-                                       "predictions/combined_" + dataset + "_16_mini_epoch_" + str(epoch) + ".csv") 
+                                       "predictions/repaired/combined_" + dataset + "_epoch_" + str(epoch) + ".csv") 
           
                 # Compute batch metrics
+                if labels.shape[0] < 2:
+                    continue
+                    
                 r2 = r2_score(labels, outputs)
                 summary_batch = {'average r2': r2, 'average MSE loss': loss.item()}
                 summaries.append(summary_batch)
@@ -326,7 +325,7 @@ def predict(model, loss_fn, dataloader, batch_size, num_epochs,
         print("Restoring parameters from {}".format(saved_weights_path))
 
     # Evaluate on validation or test set
-    epoch = "all_time_best_weights" ##
+    epoch = "best_16_test_preds2" ##
     mean_metrics, v_global_step = evaluate(model, loss_fn, dataloader, dataset, batch_size, epoch, 0)
     r2 = mean_metrics['average r2']
     print("Mean R2 for {} dataset: {}".format(dataset, r2))
@@ -339,33 +338,36 @@ def run_train():
     '''
     
     npy_dir = utils.SENTINEL_FOLDER 
-    checkpt_dir = "checkpoints/end_to_end/"
+    checkpt_dir = "checkpoints/end_to_end/repaired/"
     
     #train_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
     #val_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_master_csv_2016_2017.csv")
     #test_master_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
     
-    #train_thresh =  os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_DT_and_thresh_2000_csv_2016.csv")
-    train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_sufficient_close_stats_2016.csv")
-    val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_sufficient_close_stats_2016.csv")
+    train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_suff_stats_cloud_remove_2016.csv")
+    val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_suff_stats_cloud_remove_2016.csv")
+    #train_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_sufficient_close_2016_2017.csv")
+    #val_repaired = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_sufficient_close_2016_2017.csv")
 
-    lr = 0.00001
+
+    lr = 1e-6
     reg = 5e-2    
     batch_size = 90 
-    num_epochs = 20 ## 150
-    num_train = 87962 # = thresholded ##308132 
-   
+    num_epochs = 30 ## 150
+    num_train = 12761 # new repaired data #87962 = thresholded ##308132 
+    num_sent_bands = 8
+    
     print("Training model for {} epochs with batch size = {}, lr = {}, reg = {}.".format(num_epochs, batch_size, lr, reg))
    
     dataloaders = load_data_new(train_repaired, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, val_images=npy_dir, 
                                 val_nonimage_csv=val_repaired,
-                                num_sent_bands=8,
+                                num_sent_bands=num_sent_bands, #8
                                 stats_in_csv=True)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = CNN_combined(num_bands=8, device=device)
+    model = CNN_combined(num_bands=num_sent_bands, device=device)
     model.to(device)
 
     model._set_seeds(0)
@@ -374,7 +376,7 @@ def run_train():
         
     train_and_evaluate(model, optimizer, nn.MSELoss(), dataloaders['train'], dataloaders['val'], 
                        batch_size=batch_size, num_epochs=num_epochs, num_train=num_train, 
-                       model_dir = checkpt_dir, saved_weights_file="best_weights")
+                       model_dir = checkpt_dir, saved_weights_file="best_weights")#"all_best_before_repair")
     
 def run_test():
     '''
@@ -382,34 +384,33 @@ def run_test():
     '''
  
     npy_dir = utils.SENTINEL_FOLDER 
-    checkpt_dir = "checkpoints/end_to_end/"    
+    checkpt_dir = "checkpoints/end_to_end/repaired"    
     
     #train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_master_csv_2016_2017.csv")   
     #test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "test_sites_master_csv_2016_2017.csv")
 
     ### Testing with thresholded dataset 
-    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_sites_DT_and_thresh_2000_csv_2016.csv")
-    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_sites_DT_and_thresh_2000_csv_2016.csv")
-    ###
-    
-    batch_size,num_epochs = 0.00001,5e-2,90,150
+    train_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "train_repaired_suff_stats_cloud_remove_2016.csv")
+    test_csv = os.path.join(utils.PROCESSED_DATA_FOLDER, "val_repaired_suff_stats_cloud_remove_2016.csv")    ###
+
+    batch_size, num_epochs = 90, 150
     
     dataloaders = load_data_new(train_csv, batch_size = batch_size, 
                                 sample_balanced=False, num_workers=8,
                                 train_images=npy_dir, test_images=npy_dir, 
                                 test_nonimage_csv=test_csv,
                                 num_sent_bands=8,
-                                stats_in_csv=True)    
+                                stats_in_csv=False)    
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = CNN_combined(num_bands=8, device=device)
     model.to(device)
     
     predict(model, nn.MSELoss(), dataloaders['test'], batch_size, num_epochs, 
-            dataset='test', model_dir=checkpt_dir, saved_weights_file="all_time_best")
+            dataset='test', model_dir=checkpt_dir, saved_weights_file="best_weights")
     
     
 if __name__ == "__main__":
     
-    run_train()
-    #run_test()
+    #run_train()
+    run_test()
